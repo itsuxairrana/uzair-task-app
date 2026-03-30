@@ -3,10 +3,12 @@ import { useTaskStore } from './store/taskStore';
 import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleClientId, getStoredGoogleClientId } from './services/googleAuth';
 import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
 import { getTeam, saveTeam } from './services/gmailApi';
+import { verifyToken, clearAuth, getUser } from './services/authApi';
 import WorkspaceTabs from './components/WorkspaceTabs';
 import Dashboard from './components/Dashboard';
 import Chat from './components/Chat';
 import ConfirmScreen from './components/ConfirmScreen';
+import LoginScreen from './components/LoginScreen';
 import './App.css';
 
 const NAV_ITEMS = [
@@ -27,7 +29,7 @@ const KEY_MODELS = [
 
 // ── Settings Modal ────────────────────────────────────────────────────────────
 
-function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect }) {
+function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout }) {
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(KEY_MODELS.map(m => [m.id, getStoredKey(m.id)]))
   );
@@ -66,7 +68,12 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
       <div className="modal settings-modal">
         <div className="modal-header">
           <h2>Settings</h2>
-          <button className="close-btn" onClick={onClose}>✕</button>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button className="close-btn logout-btn" onClick={onLogout} title="Sign out">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            </button>
+            <button className="close-btn" onClick={onClose}>✕</button>
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -351,6 +358,23 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [authUser, setAuthUser]   = useState(getUser);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    verifyToken().then(user => { setAuthUser(user); setAuthReady(true); });
+  }, []);
+
+  if (!authReady) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#0d1f3c', color:'#fff', fontSize:14 }}>
+      Loading…
+    </div>
+  );
+  if (!authUser) return <LoginScreen onLogin={setAuthUser} />;
+  return <AppShell authUser={authUser} onLogout={() => { clearAuth(); setAuthUser(null); }} />;
+}
+
+function AppShell({ authUser, onLogout }) {
   const { setPendingTasks, pendingTasks } = useTaskStore();
   const [googleUser, setGoogleUser]           = useState(getGoogleUser());
   const [googleConnected, setGoogleConnected] = useState(isSignedIn());
@@ -496,6 +520,7 @@ export default function App() {
           googleLoading={googleLoading}
           onGoogleConnect={handleGoogleSignIn}
           onGoogleDisconnect={handleGoogleSignOut}
+          onLogout={onLogout}
         />
       )}
     </div>
