@@ -43,12 +43,12 @@ jobs:
           </IfModule>
           EOF
 
-      - name: Deploy to Hostinger via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          server-dir: ${{ secrets.FTP_PATH }}
-          dangerous-clean-slate: true
+      - name: Push dist to deploy branch
+        run: |
+          cd dist
+          git init
+          git config user.email "deploy@uzairvisuals.com"
+          git config user.name "Deploy Bot"
+          git add -A
+          git commit -m "deploy build"
+          git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/itsuxairrana/uzair-task-app.git HEAD:deploy
