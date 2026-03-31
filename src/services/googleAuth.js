@@ -19,10 +19,14 @@ const SCOPES = [
 ].join(' ');
 
 let tokenClient = null;
-let accessToken = null;
-let tokenExpiry = null;
 
-const GC_ID_KEY = 'uzair_google_client_id';
+const GC_ID_KEY      = 'uzair_google_client_id';
+const TOKEN_KEY      = 'uzair_google_token';
+const TOKEN_EXP_KEY  = 'uzair_google_token_exp';
+
+// Restore token from localStorage on module load
+let accessToken  = localStorage.getItem(TOKEN_KEY) || null;
+let tokenExpiry  = Number(localStorage.getItem(TOKEN_EXP_KEY)) || null;
 
 /** Save Google Client ID to localStorage so it can be entered in Settings UI. */
 export function setGoogleClientId(id) {
@@ -72,7 +76,8 @@ export async function initGoogleAuth() {
       if (tokenResponse.error) return;
       accessToken = tokenResponse.access_token;
       tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
-      // Persist user info
+      localStorage.setItem(TOKEN_KEY, accessToken);
+      localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
       fetchUserInfo(accessToken);
     },
   });
@@ -93,6 +98,8 @@ export function signIn() {
       }
       accessToken = tokenResponse.access_token;
       tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
+      localStorage.setItem(TOKEN_KEY, accessToken);
+      localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
       fetchUserInfo(accessToken).then(resolve).catch(resolve);
     };
     tokenClient.requestAccessToken({ prompt: 'consent' });
@@ -107,6 +114,8 @@ export function signOut() {
   accessToken = null;
   tokenExpiry = null;
   localStorage.removeItem('google_user');
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_EXP_KEY);
   window.dispatchEvent(new Event('google_auth_change'));
 }
 
