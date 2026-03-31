@@ -50,13 +50,28 @@ jobs:
 
       - name: Push built files to deploy branch
         run: |
-          cd dist
-          git init
           git config user.email "deploy@uzairvisuals.com"
           git config user.name "Deploy Bot"
+
+          # Fetch existing deploy branch
+          git fetch origin deploy || true
+
+          # Switch to deploy branch (existing) or create orphan if first time
+          if git show-ref --quiet refs/remotes/origin/deploy; then
+            git checkout -B deploy origin/deploy
+          else
+            git checkout --orphan deploy
+            git rm -rf . --quiet || true
+          fi
+
+          # Clear all files and replace with fresh build
+          git rm -rf . --quiet || true
+          cp -r dist/. .
+
+          # Commit and push normally (no force — linear history)
           git add -A
-          git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')"
-          git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/itsuxairrana/uzair-task-app.git HEAD:deploy
+          git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')" --allow-empty
+          git push origin deploy
 
       - name: Trigger Hostinger deploy
         run: curl -s -X POST "${{ secrets.HOSTINGER_WEBHOOK }}"
