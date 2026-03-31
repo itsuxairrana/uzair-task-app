@@ -47,16 +47,37 @@ jobs:
           </IfModule>
           EOF
 
-      - name: Push dist to deploy branch
+      - name: Deploy to deploy branch (no force — linear history)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          REPO="https://x-access-token:${GITHUB_TOKEN}@github.com/itsuxairrana/uzair-task-app.git"
+
           git config user.email "deploy@uzairvisuals.com"
           git config user.name "Deploy Bot"
-          # Checkout or create the deploy branch with no history conflicts
-          git fetch origin deploy 2>/dev/null || true
-          git checkout -B deploy
-          # Remove everything except .git then copy dist contents
-          git rm -rf . --quiet
-          cp -r dist/. .
+
+          # Clone existing deploy branch into a separate folder
+          if git ls-remote --heads origin deploy | grep -q deploy; then
+            git clone --branch deploy --depth 1 "$REPO" deploy_out
+          else
+            mkdir deploy_out
+            cd deploy_out && git init && git remote add origin "$REPO" && git checkout -b deploy && cd ..
+          fi
+
+          # Replace all files with fresh build output (keep .git)
+          cd deploy_out
+          find . -mindepth 1 -not -path './.git*' -delete
+
+          cp -r ../dist/. .
+
           git add -A
-          git commit -m "deploy build $(date -u '+%Y-%m-%d %H:%M')" --allow-empty
-          git push --force origin deploy
+          git status
+
+          # Only commit if something changed
+          if ! git diff --staged --quiet; then
+            git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push origin deploy
+            echo "Deployed successfully"
+          else
+            echo "No changes to deploy"
+          fi
