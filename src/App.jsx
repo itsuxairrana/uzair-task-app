@@ -3,7 +3,7 @@ import { useTaskStore } from './store/taskStore';
 import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleClientId, getStoredGoogleClientId } from './services/googleAuth';
 import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
 import { getTeam, saveTeam } from './services/gmailApi';
-import { verifyToken, clearAuth, getUser } from './services/authApi';
+import { verifyToken, clearAuth, getUser, changePassword } from './services/authApi';
 import WorkspaceTabs from './components/WorkspaceTabs';
 import Dashboard from './components/Dashboard';
 import Chat from './components/Chat';
@@ -35,12 +35,16 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
   );
   const [saved, setSaved]       = useState({});
   const [visible, setVisible]   = useState({});
-  const [activeTab, setActiveTab] = useState('keys'); // 'keys' | 'google' | 'team'
+  const [activeTab, setActiveTab] = useState('keys'); // 'keys' | 'google' | 'team' | 'account'
   const [gcId, setGcId]         = useState(getStoredGoogleClientId);
   const [gcSaved, setGcSaved]   = useState(false);
   const [team, setTeam]         = useState(getTeam);
   const [newName, setNewName]   = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew]         = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwMsg, setPwMsg]         = useState(null); // {type:'ok'|'err', text}
 
   function handleSave(modelId) {
     setStoredKey(modelId, inputs[modelId]);
@@ -89,6 +93,10 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
           <button className={'settings-tab' + (activeTab === 'team' ? ' settings-tab-active' : '')} onClick={() => setActiveTab('team')}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="4.5" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/><circle cx="9" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/><path d="M1 11c0-2 1.6-3.5 3.5-3.5S8 9 8 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M9 7.5c1.7.3 3 1.7 3 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
             Team{team.length > 0 && <span className="tab-count">{team.length}</span>}
+          </button>
+          <button className={'settings-tab' + (activeTab === 'account' ? ' settings-tab-active' : '')} onClick={() => setActiveTab('account')}>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.3"/><path d="M1 12c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+            Account
           </button>
         </div>
 
@@ -345,6 +353,63 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
 
               <div className="settings-note">
                 If Notify gives a Gmail error: go to Google tab → Disconnect → Reconnect (one-time to grant email permission).
+              </div>
+            </div>
+          )}
+
+          {/* ── Account tab ── */}
+          {activeTab === 'account' && (
+            <div className="team-section">
+              <p className="settings-info">Change your login password.</p>
+              <div className="team-add-form" style={{flexDirection:'column',gap:10}}>
+                <input
+                  className="sk-input"
+                  type="password"
+                  placeholder="Current password"
+                  value={pwCurrent}
+                  onChange={e => setPwCurrent(e.target.value)}
+                  autoComplete="current-password"
+                />
+                <input
+                  className="sk-input"
+                  type="password"
+                  placeholder="New password (min 8 chars)"
+                  value={pwNew}
+                  onChange={e => setPwNew(e.target.value)}
+                  autoComplete="new-password"
+                />
+                <input
+                  className="sk-input"
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={pwConfirm}
+                  onChange={e => setPwConfirm(e.target.value)}
+                  autoComplete="new-password"
+                />
+                {pwMsg && (
+                  <div style={{fontSize:12, color: pwMsg.type === 'ok' ? '#22c55e' : '#ef4444', padding:'4px 0'}}>
+                    {pwMsg.text}
+                  </div>
+                )}
+                <button
+                  className="sk-save-btn"
+                  style={{alignSelf:'flex-start'}}
+                  disabled={!pwCurrent || !pwNew || !pwConfirm}
+                  onClick={async () => {
+                    setPwMsg(null);
+                    if (pwNew !== pwConfirm) { setPwMsg({type:'err', text:'Passwords do not match'}); return; }
+                    if (pwNew.length < 8)    { setPwMsg({type:'err', text:'Min 8 characters'}); return; }
+                    try {
+                      await changePassword(pwCurrent, pwNew);
+                      setPwMsg({type:'ok', text:'Password changed successfully!'});
+                      setPwCurrent(''); setPwNew(''); setPwConfirm('');
+                    } catch(e) {
+                      setPwMsg({type:'err', text: e.message});
+                    }
+                  }}
+                >
+                  Change Password
+                </button>
               </div>
             </div>
           )}

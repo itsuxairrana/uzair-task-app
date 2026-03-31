@@ -72,3 +72,13 @@ export async function removeTeamMember(id) {
   if (!res.ok) throw new Error(data.error);
   return data;
 }
+
+export async function changePassword(currentPassword, newPassword) {
+  const res  = await fetch(`${API}/change_password.php`, {
+    method: 'POST', headers: authHeaders(),
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+  return data;
+}
