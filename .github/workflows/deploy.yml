@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   deploy:
@@ -48,15 +48,12 @@ jobs:
           </IfModule>
           EOF
 
-      - name: Upload to Hostinger via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          server-dir: /public_html/
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/api/config.php
+      - name: Push built files to deploy branch
+        run: |
+          cd dist
+          git init
+          git config user.email "deploy@uzairvisuals.com"
+          git config user.name "Deploy Bot"
+          git add -A
+          git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/itsuxairrana/uzair-task-app.git HEAD:deploy
