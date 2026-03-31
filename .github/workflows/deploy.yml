@@ -53,6 +53,9 @@ jobs:
           git config user.email "deploy@uzairvisuals.com"
           git config user.name "Deploy Bot"
 
+          # Save dist to temp BEFORE switching branches
+          cp -r dist /tmp/deploy_dist
+
           # Fetch existing deploy branch
           git fetch origin deploy || true
 
@@ -61,14 +64,15 @@ jobs:
             git checkout -B deploy origin/deploy
           else
             git checkout --orphan deploy
-            git rm -rf . --quiet || true
           fi
 
-          # Clear all files and replace with fresh build
+          # Clear all tracked files
           git rm -rf . --quiet || true
-          cp -r dist/. .
 
-          # Commit and push normally (no force — linear history)
+          # Restore build from temp
+          cp -r /tmp/deploy_dist/. .
+
+          # Commit and push (no force — linear history)
           git add -A
           git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')" --allow-empty
           git push origin deploy
