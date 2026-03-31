@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   deploy:
@@ -31,6 +31,7 @@ jobs:
           VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
           VITE_GROK_API_KEY: ${{ secrets.VITE_GROK_API_KEY }}
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_API_URL: /api
         run: npm run build
 
       - name: Add .htaccess for SPA routing
@@ -47,37 +48,15 @@ jobs:
           </IfModule>
           EOF
 
-      - name: Deploy to deploy branch (no force — linear history)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          REPO="https://x-access-token:${GITHUB_TOKEN}@github.com/itsuxairrana/uzair-task-app.git"
-
-          git config user.email "deploy@uzairvisuals.com"
-          git config user.name "Deploy Bot"
-
-          # Clone existing deploy branch into a separate folder
-          if git ls-remote --heads origin deploy | grep -q deploy; then
-            git clone --branch deploy --depth 1 "$REPO" deploy_out
-          else
-            mkdir deploy_out
-            cd deploy_out && git init && git remote add origin "$REPO" && git checkout -b deploy && cd ..
-          fi
-
-          # Replace all files with fresh build output (keep .git)
-          cd deploy_out
-          find . -mindepth 1 -not -path './.git*' -delete
-
-          cp -r ../dist/. .
-
-          git add -A
-          git status
-
-          # Only commit if something changed
-          if ! git diff --staged --quiet; then
-            git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')"
-            git push origin deploy
-            echo "Deployed successfully"
-          else
-            echo "No changes to deploy"
-          fi
+      - name: Upload to Hostinger via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: /public_html/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/api/config.php
