@@ -57,3 +57,6 @@ jobs:
           git add -A
           git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/itsuxairrana/uzair-task-app.git HEAD:deploy
+
+      - name: Trigger Hostinger deploy
+        run: curl -s -X POST "${{ secrets.HOSTINGER_WEBHOOK }}"
