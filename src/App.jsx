@@ -566,7 +566,7 @@ function AppShell({ authUser, onLogout }) {
               className={'topbar-btn' + (chatOpen ? ' topbar-btn-active' : '')}
               onClick={() => setChatOpen(o => !o)}
             >
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1 1h11v8H7l-3 3v-3H1V1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg> AI Chat
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="5" r="4" stroke="currentColor" strokeWidth="1.3"/><path d="M4 5h5M4 7h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M6.5 9v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> AI Chat
             </button>
           </div>
         </header>
