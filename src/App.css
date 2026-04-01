@@ -133,6 +133,10 @@ code { font-family: monospace; background: var(--surface2); padding: 1px 5px; bo
 .sb-signout { background: none; border: none; color: var(--sidebar-text); font-size: 11px; cursor: pointer; padding: 0; text-align: left; font-family: var(--font); }
 .sb-signout:hover { color: #fff; }
 
+.sb-logout-btn { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: none; color: var(--sidebar-text); font-size: 12px; font-family: var(--font); cursor: pointer; padding: 8px 10px; border-radius: 7px; margin-top: 4px; transition: background .15s, color .15s; }
+.sb-logout-btn:hover { background: rgba(239,68,68,.15); color: #f87171; }
+.sb-logout-collapsed { justify-content: center; padding: 8px; }
+
 .google-connect-btn {
   display: flex;
   align-items: center;
