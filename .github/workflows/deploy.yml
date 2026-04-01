@@ -50,35 +50,18 @@ jobs:
 
       - name: Push built files to deploy branch
         run: |
+          cd dist
+          git init
           git config user.email "deploy@uzairvisuals.com"
           git config user.name "Deploy Bot"
-
-          # Save dist to temp BEFORE switching branches
-          cp -r dist /tmp/deploy_dist
-
-          # Fetch existing deploy branch
-          git fetch origin deploy || true
-
-          # Switch to deploy branch (existing) or create orphan if first time
-          if git show-ref --quiet refs/remotes/origin/deploy; then
-            git checkout -B deploy origin/deploy
-          else
-            git checkout --orphan deploy
-          fi
-
-          # Clear all tracked files
-          git rm -rf . --quiet || true
-
-          # Restore build from temp
-          cp -r /tmp/deploy_dist/. .
-
-          # Commit and push (no force — linear history)
           git add -A
-          git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')" --allow-empty
-          git push origin deploy
+          git commit -m "deploy $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/itsuxairrana/uzair-task-app.git HEAD:deploy
+          echo "Deploy branch updated"
 
-      - name: Trigger Hostinger deploy
+      - name: Trigger Hostinger to pull
         run: |
-          curl -s -X POST "${{ secrets.HOSTINGER_WEBHOOK }}"
-          sleep 10
-          curl -s "https://task.uzairvisuals.com/git-deploy.php?secret=uzair_deploy_2026"
+          curl -s -X POST "${{ secrets.HOSTINGER_WEBHOOK }}" || true
+          sleep 15
+          RESULT=$(curl -s "https://task.uzairvisuals.com/git-deploy.php?secret=uzair_deploy_2026")
+          echo "Deploy result: $RESULT"
