@@ -4,6 +4,7 @@ import { isSignedIn, signIn } from '../services/googleAuth';
 import { pushTaskToCalendar, deleteCalendarEvent } from '../services/calendarApi';
 import { pushTaskToGoogleTasks, deleteGoogleTask } from '../services/tasksApi';
 import { sendTaskEmail, getEmployeeEmail } from '../services/gmailApi';
+import { syncTask } from '../services/taskSyncApi';
 
 const PRIORITY_COLOR = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' };
 const STATUS_COLOR   = { todo: '#9ca3af', in_progress: '#3b82f6', done: '#16a34a' };
@@ -116,19 +117,27 @@ export default function TaskCard({ task, onEdit }) {
   }
 
   async function handleSyncToGoogle() {
-    if (!isSignedIn()) {
-      setSyncMsg('Sign in with Google first.');
-      setTimeout(() => setSyncMsg(''), 3000);
-      return;
-    }
     setSyncing(true); setSyncMsg('Syncing…');
     try {
-      const [eventId, gtaskId] = await Promise.all([
-        task.due_date ? pushTaskToCalendar(task, employeeEmail) : Promise.resolve(null),
-        pushTaskToGoogleTasks(task),
-      ]);
-      setGoogleIds(task.id, { google_calendar_event_id: eventId, google_task_id: gtaskId });
-      setSyncMsg('Synced!');
+      // Always push to DB so assigned employee can see the task
+      if (task.assigned_to && task.assigned_to !== 'Uzair' && task.assigned_to !== '') {
+        await syncTask(task);
+      }
+
+      // Push to Google Calendar + Tasks only if signed in
+      if (isSignedIn()) {
+        const [eventId, gtaskId] = await Promise.all([
+          task.due_date ? pushTaskToCalendar(task, employeeEmail) : Promise.resolve(null),
+          pushTaskToGoogleTasks(task),
+        ]);
+        setGoogleIds(task.id, { google_calendar_event_id: eventId, google_task_id: gtaskId });
+      }
+
+      setSyncMsg(
+        task.assigned_to && task.assigned_to !== 'Uzair'
+          ? `Sent to ${task.assigned_to}!`
+          : 'Synced!'
+      );
     } catch (err) {
       setSyncMsg(err.message);
     } finally {
@@ -272,8 +281,9 @@ export default function TaskCard({ task, onEdit }) {
         <button className="tc-btn" onClick={() => onEdit(task)}>
           <EditIcon /> Edit
         </button>
-        <button className="tc-btn" onClick={handleSyncToGoogle} disabled={syncing}>
-          <SyncIcon /> {syncing ? '…' : 'Sync'}
+        <button className="tc-btn" onClick={handleSyncToGoogle} disabled={syncing}
+          title={task.assigned_to && task.assigned_to !== 'Uzair' ? `Push task to ${task.assigned_to}'s dashboard` : 'Sync to Google Calendar & Tasks'}>
+          <SyncIcon /> {syncing ? '…' : (task.assigned_to && task.assigned_to !== 'Uzair' ? 'Assign' : 'Sync')}
         </button>
         {showNotify && (
           <button

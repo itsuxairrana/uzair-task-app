@@ -172,7 +172,7 @@ export default function TaskForm({ task, onClose }) {
               type="text"
               value={form.client_tag}
               onChange={e => set('client_tag', e.target.value)}
-              placeholder="e.g. Rehman Foods, Brand Refresh"
+              placeholder="e.g. Horizon Media, Brand Refresh"
             />
           </label>
 

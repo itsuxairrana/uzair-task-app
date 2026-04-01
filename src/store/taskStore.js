@@ -1,13 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { syncTask, deleteTaskFromDB } from '../services/taskSyncApi';
-
-// Sync to DB if task is assigned to an employee (not Uzair/unassigned)
-function maybeSync(task) {
-  if (task.assigned_to && task.assigned_to !== 'Uzair' && task.assigned_to !== '') {
-    syncTask(task).catch(() => {});
-  }
-}
+import { deleteTaskFromDB } from '../services/taskSyncApi';
 
 const LS_KEY = 'uzair_task_os_tasks';
 
@@ -61,7 +54,6 @@ export const useTaskStore = create((set, get) => ({
       saveToStorage(tasks);
       return { tasks };
     });
-    maybeSync(newTask);
     return newTask;
   },
 
@@ -77,8 +69,6 @@ export const useTaskStore = create((set, get) => ({
     set(state => {
       const tasks = state.tasks.map(t => t.id === id ? { ...t, ...updates } : t);
       saveToStorage(tasks);
-      const updated = tasks.find(t => t.id === id);
-      if (updated) maybeSync(updated);
       return { tasks };
     });
   },
