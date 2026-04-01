@@ -1,6 +1,17 @@
 <?php
 require_once __DIR__ . '/config.php';
 
+// ── Global error handler — always return JSON, never empty ────────────────────
+set_exception_handler(function($e) {
+    http_response_code(500);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['error' => $e->getMessage(), 'file' => basename($e->getFile()), 'line' => $e->getLine()]);
+    exit;
+});
+set_error_handler(function($severity, $msg, $file, $line) {
+    throw new ErrorException($msg, 0, $severity, $file, $line);
+});
+
 // ── CORS ──────────────────────────────────────────────────────────────────────
 function cors() {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';

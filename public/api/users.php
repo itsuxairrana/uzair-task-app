@@ -45,6 +45,18 @@ if ($method === 'POST') {
     }
 }
 
+// ── PATCH (admin resets employee password) ───────────────────────────────────
+if ($method === 'PATCH') {
+    $b   = json_decode(file_get_contents('php://input'), true);
+    $id  = intval($b['id'] ?? 0);
+    $pwd = $b['new_password'] ?? '';
+    if (!$id || strlen($pwd) < 6) err('User ID and password (min 6 chars) required');
+    $hash = password_hash($pwd, PASSWORD_BCRYPT, ['cost' => 12]);
+    $stmt = db()->prepare("UPDATE users SET password_hash = ? WHERE id = ? AND role = 'employee'");
+    $stmt->execute([$hash, $id]);
+    ok(['ok' => true, 'message' => 'Password updated']);
+}
+
 // ── DELETE ────────────────────────────────────────────────────────────────────
 if ($method === 'DELETE') {
     $id = intval($_GET['id'] ?? 0);

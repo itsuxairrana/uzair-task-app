@@ -4,6 +4,8 @@ import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleCl
 import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
 import { getTeam, saveTeam } from './services/gmailApi';
 import { verifyToken, clearAuth, getUser, changePassword } from './services/authApi';
+import { fetchNotifications, markNotificationsRead, resetEmployeePassword } from './services/taskSyncApi';
+import EmployeeDashboard from './components/EmployeeDashboard';
 import WorkspaceTabs from './components/WorkspaceTabs';
 import Dashboard from './components/Dashboard';
 import Chat from './components/Chat';
@@ -29,7 +31,7 @@ const KEY_MODELS = [
 
 // ── Settings Modal ────────────────────────────────────────────────────────────
 
-function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout }) {
+function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout, dbTeam }) {
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(KEY_MODELS.map(m => [m.id, getStoredKey(m.id)]))
   );
@@ -41,6 +43,9 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
   const [team, setTeam]         = useState(getTeam);
   const [newName, setNewName]   = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPass, setNewPass]   = useState('');
+  const [resetPw, setResetPw]   = useState({}); // { [id]: newPassword }
+  const [resetMsg, setResetMsg] = useState({});  // { [id]: 'ok'|'err' }
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew]         = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
@@ -267,92 +272,77 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
           {activeTab === 'team' && (
             <div className="team-section">
               <p className="settings-info">
-                Add team members below. The <strong>Name must exactly match</strong> the "Assigned to" field on a task (case-insensitive). Once matched, a <strong>Notify</strong> button appears on that task to email it directly.
+                Manage employees. Each employee gets their own login and sees only their assigned tasks.
               </p>
 
-              {/* Employee list */}
-              {team.length === 0 ? (
-                <div className="team-empty">No team members yet. Add one below.</div>
+              {/* DB employees with password reset */}
+              {dbTeam.length === 0 ? (
+                <div className="team-empty">No employees yet. Add one below.</div>
               ) : (
                 <div className="team-list">
-                  {team.map((member, idx) => (
-                    <div key={idx} className="team-row">
-                      <div className="team-avatar">
-                        {member.name.charAt(0).toUpperCase()}
+                  {dbTeam.map(member => (
+                    <div key={member.id} className="team-row team-row-expanded">
+                      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+                        <div className="team-avatar">{member.name.charAt(0).toUpperCase()}</div>
+                        <div className="team-info">
+                          <span className="team-name">{member.name}</span>
+                          <span className="team-email">{member.email}</span>
+                        </div>
+                        <span className="team-role-badge">{member.role}</span>
                       </div>
-                      <div className="team-info">
-                        <span className="team-name">{member.name}</span>
-                        <span className="team-email">{member.email}</span>
+                      <div className="sk-input-row" style={{marginTop:4}}>
+                        <input
+                          className="sk-input"
+                          type="password"
+                          placeholder="New password for this user"
+                          value={resetPw[member.id] || ''}
+                          onChange={e => setResetPw(p => ({...p, [member.id]: e.target.value}))}
+                          autoComplete="new-password"
+                        />
+                        <button
+                          className={'sk-save-btn' + (resetMsg[member.id] === 'ok' ? ' sk-saved' : '')}
+                          disabled={!resetPw[member.id]?.trim()}
+                          onClick={async () => {
+                            try {
+                              await resetEmployeePassword(member.id, resetPw[member.id]);
+                              setResetMsg(m => ({...m, [member.id]: 'ok'}));
+                              setResetPw(p => ({...p, [member.id]: ''}));
+                              setTimeout(() => setResetMsg(m => ({...m, [member.id]: ''})), 2500);
+                            } catch(e) {
+                              setResetMsg(m => ({...m, [member.id]: 'err'}));
+                            }
+                          }}
+                        >
+                          {resetMsg[member.id] === 'ok' ? '✓ Updated' : 'Set Password'}
+                        </button>
                       </div>
-                      <button
-                        className="team-remove-btn"
-                        type="button"
-                        onClick={() => {
-                          const updated = team.filter((_, i) => i !== idx);
-                          setTeam(updated);
-                          saveTeam(updated);
-                          window.dispatchEvent(new Event('team_updated'));
-                        }}
-                        title="Remove"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                      </button>
+                      {resetMsg[member.id] === 'err' && <div style={{fontSize:11,color:'#ef4444',marginTop:4}}>Failed to update password</div>}
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Add member form */}
-              <div className="team-add-form">
-                <input
-                  className="sk-input"
-                  type="text"
-                  placeholder="Name — must match task's Assigned To"
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && newName.trim() && newEmail.trim()) {
-                      const updated = [...team, { name: newName.trim(), email: newEmail.trim() }];
-                      setTeam(updated); saveTeam(updated);
-                      window.dispatchEvent(new Event('team_updated'));
-                      setNewName(''); setNewEmail('');
-                    }
-                  }}
-                />
-                <input
-                  className="sk-input"
-                  type="email"
-                  placeholder="Email address"
-                  value={newEmail}
-                  onChange={e => setNewEmail(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && newName.trim() && newEmail.trim()) {
-                      const updated = [...team, { name: newName.trim(), email: newEmail.trim() }];
-                      setTeam(updated); saveTeam(updated);
-                      window.dispatchEvent(new Event('team_updated'));
-                      setNewName(''); setNewEmail('');
-                    }
-                  }}
-                />
-                <button
-                  className="sk-save-btn"
-                  type="button"
-                  disabled={!newName.trim() || !newEmail.trim()}
-                  onClick={() => {
-                    const updated = [...team, { name: newName.trim(), email: newEmail.trim() }];
-                    setTeam(updated);
-                    saveTeam(updated);
-                    window.dispatchEvent(new Event('team_updated'));
-                    setNewName('');
-                    setNewEmail('');
-                  }}
-                >
-                  + Add
-                </button>
+              {/* Add employee form */}
+              <div className="team-add-form" style={{flexDirection:'column',gap:8}}>
+                <div style={{display:'flex',gap:8}}>
+                  <input className="sk-input" type="text" placeholder="Full name" value={newName} onChange={e => setNewName(e.target.value)} />
+                  <input className="sk-input" type="email" placeholder="Email" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <input className="sk-input" type="password" placeholder="Password (min 6 chars)" value={newPass} onChange={e => setNewPass(e.target.value)} />
+                  <button
+                    className="sk-save-btn"
+                    disabled={!newName.trim() || !newEmail.trim() || !newPass.trim()}
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('add_employee', { detail: { name: newName.trim(), email: newEmail.trim(), password: newPass } }));
+                      setNewName(''); setNewEmail(''); setNewPass('');
+                    }}
+                  >+ Add Employee</button>
+                </div>
               </div>
 
               <div className="settings-note">
-                If Notify gives a Gmail error: go to Google tab → Disconnect → Reconnect (one-time to grant email permission).
+                Employees log in at <strong>task.uzairvisuals.com</strong> with their email and password. They see only tasks assigned to them.
               </div>
             </div>
           )}
@@ -436,7 +426,15 @@ export default function App() {
     </div>
   );
   if (!authUser) return <LoginScreen onLogin={setAuthUser} />;
-  return <AppShell authUser={authUser} onLogout={() => { clearAuth(); setAuthUser(null); }} />;
+
+  const handleLogout = () => { clearAuth(); setAuthUser(null); };
+
+  // Employees get their own simple dashboard
+  if (authUser.role === 'employee') {
+    return <EmployeeDashboard authUser={authUser} onLogout={handleLogout} />;
+  }
+
+  return <AppShell authUser={authUser} onLogout={handleLogout} />;
 }
 
 function AppShell({ authUser, onLogout }) {
@@ -449,6 +447,9 @@ function AppShell({ authUser, onLogout }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeNav, setActiveNav]             = useState('dashboard');
   const [showSettings, setShowSettings]       = useState(false);
+  const [notifications, setNotifications]     = useState([]);
+  const [showNotifs, setShowNotifs]           = useState(false);
+  const [dbTeam, setDbTeam]                   = useState([]);
 
   useEffect(() => {
     initGoogleAuth();
@@ -457,8 +458,42 @@ function AppShell({ authUser, onLogout }) {
       setGoogleConnected(isSignedIn());
     }
     window.addEventListener('google_auth_change', onAuthChange);
-    return () => window.removeEventListener('google_auth_change', onAuthChange);
+
+    // Load notifications + team
+    loadNotifications();
+    loadDbTeam();
+    const notifInterval = setInterval(loadNotifications, 30000);
+
+    // Listen for add_employee event from settings modal
+    function onAddEmployee(e) {
+      const { name, email, password } = e.detail;
+      import('./services/authApi').then(({ addTeamMember }) => {
+        addTeamMember(name, email, password).then(loadDbTeam).catch(err => alert(err.message));
+      });
+    }
+    window.addEventListener('add_employee', onAddEmployee);
+
+    return () => {
+      window.removeEventListener('google_auth_change', onAuthChange);
+      window.removeEventListener('add_employee', onAddEmployee);
+      clearInterval(notifInterval);
+    };
   }, []);
+
+  async function loadNotifications() {
+    try {
+      const data = await fetchNotifications();
+      setNotifications(data.notifications || []);
+    } catch {}
+  }
+
+  async function loadDbTeam() {
+    try {
+      const { fetchTeam } = await import('./services/authApi');
+      const users = await fetchTeam();
+      setDbTeam(users.filter(u => u.role === 'employee'));
+    } catch {}
+  }
 
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
@@ -562,6 +597,41 @@ function AppShell({ authUser, onLogout }) {
             <WorkspaceTabs />
           </div>
           <div className="topbar-right">
+            {/* Notification bell */}
+            <div className="notif-wrap">
+              <button className="topbar-btn notif-btn" onClick={() => { setShowNotifs(o => !o); }}>
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1.5a4 4 0 0 1 4 4v2.5l1 1.5H1.5L2.5 8V5.5a4 4 0 0 1 4-4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M5 10.5a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.3"/></svg>
+                {notifications.filter(n => !n.is_read).length > 0 && (
+                  <span className="notif-badge">{notifications.filter(n => !n.is_read).length}</span>
+                )}
+              </button>
+              {showNotifs && (
+                <div className="notif-dropdown">
+                  <div className="notif-header">
+                    <span>Notifications</span>
+                    {notifications.some(n => !n.is_read) && (
+                      <button className="notif-mark-all" onClick={async () => {
+                        await markNotificationsRead('all');
+                        setNotifications(ns => ns.map(n => ({...n, is_read: 1})));
+                      }}>Mark all read</button>
+                    )}
+                  </div>
+                  {notifications.length === 0
+                    ? <div className="notif-empty">No notifications</div>
+                    : notifications.slice(0, 10).map(n => (
+                      <div key={n.id} className={'notif-item' + (n.is_read ? ' notif-read' : '')}
+                        onClick={async () => {
+                          await markNotificationsRead(n.id);
+                          setNotifications(ns => ns.map(x => x.id === n.id ? {...x, is_read: 1} : x));
+                        }}>
+                        <div className="notif-msg">{n.message}</div>
+                        <div className="notif-time">{new Date(n.created_at).toLocaleString()}</div>
+                      </div>
+                    ))
+                  }
+                </div>
+              )}
+            </div>
             <button
               className={'topbar-btn' + (chatOpen ? ' topbar-btn-active' : '')}
               onClick={() => setChatOpen(o => !o)}
@@ -596,6 +666,7 @@ function AppShell({ authUser, onLogout }) {
           onGoogleConnect={handleGoogleSignIn}
           onGoogleDisconnect={handleGoogleSignOut}
           onLogout={onLogout}
+          dbTeam={dbTeam}
         />
       )}
     </div>
