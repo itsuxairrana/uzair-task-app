@@ -174,6 +174,7 @@ code { font-family: monospace; background: var(--surface2); padding: 1px 5px; bo
   padding: 0 20px 0 0;
   flex-shrink: 0;
   gap: 12px;
+  overflow: visible;
 }
 .topbar-left { flex: 1; overflow: hidden; }
 .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -716,6 +717,27 @@ code { font-family: monospace; background: var(--surface2); padding: 1px 5px; bo
 }
 .task-form input:focus, .task-form textarea:focus, .task-form select:focus { border-color: var(--blue); background: var(--surface); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* ── Milestone editor in TaskForm ──────────────────────────────────────── */
+.form-milestones { display: flex; flex-direction: column; gap: 6px; }
+.fm-header { display: flex; align-items: center; justify-content: space-between; }
+.fm-header label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.fm-count { background: var(--blue); color: #fff; font-size: 10px; font-weight: 700; border-radius: 99px; padding: 1px 6px; margin-left: 6px; }
+.fm-row { display: flex; align-items: flex-start; gap: 6px; }
+.fm-num { width: 20px; height: 20px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 6px; }
+.fm-inputs { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.fm-title-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; color: var(--text); padding: 6px 10px; font-size: 12px; font-family: var(--font); outline: none; box-sizing: border-box; }
+.fm-title-input:focus { border-color: var(--blue); background: var(--surface); }
+.fm-inst-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; color: var(--text-muted); padding: 5px 10px; font-size: 11px; font-family: var(--font); outline: none; box-sizing: border-box; }
+.fm-inst-input:focus { border-color: var(--blue); color: var(--text); background: var(--surface); }
+.fm-del-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; width: 24px; height: 24px; cursor: pointer; font-size: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 6px; transition: all .15s; }
+.fm-del-btn:hover { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,.08); }
+.fm-add-row { display: flex; gap: 6px; align-items: center; padding-top: 4px; border-top: 1px dashed var(--border); margin-top: 2px; }
+.fm-add-row .fm-title-input { flex: 2; }
+.fm-add-row .fm-inst-input { flex: 3; }
+.fm-add-btn { background: transparent; border: 1px solid var(--blue); color: var(--blue); border-radius: 7px; padding: 6px 12px; font-size: 11px; font-weight: 600; font-family: var(--font); cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all .15s; }
+.fm-add-btn:hover { background: var(--blue); color: #fff; }
+.fm-add-btn:disabled { opacity: .4; cursor: not-allowed; }
+
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
 
 .btn-primary { background: var(--blue); color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; font-family: var(--font); cursor: pointer; }
@@ -1053,8 +1075,9 @@ code { font-family: monospace; background: var(--surface2); padding: 1px 5px; bo
 .sk-badge-ok { background: #dcfce7; color: var(--done-color); }
 .sk-badge-missing { background: var(--surface2); color: var(--text-muted); }
 .sk-input-row { display: flex; gap: 6px; align-items: center; }
-.sk-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 11px; font-size: 12px; font-family: monospace; outline: none; }
+.sk-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 11px; font-size: 12px; font-family: var(--font); outline: none; }
 .sk-input:focus { border-color: var(--blue); background: var(--surface); }
+.sk-input-mono { font-family: monospace; font-size: 11px; }
 .sk-eye-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; cursor: pointer; font-size: 13px; flex-shrink: 0; }
 .sk-eye-btn:hover { border-color: var(--blue); }
 .sk-save-btn { background: var(--blue); color: #fff; border: none; border-radius: 7px; padding: 7px 14px; font-size: 12px; font-weight: 700; font-family: var(--font); cursor: pointer; flex-shrink: 0; transition: background var(--transition); }
@@ -1172,7 +1195,7 @@ code { font-family: monospace; background: var(--surface2); padding: 1px 5px; bo
 .notif-wrap { position: relative; }
 .notif-btn  { position: relative; }
 .notif-badge { position: absolute; top: -4px; right: -4px; background: #ef4444; color: #fff; font-size: 9px; font-weight: 700; border-radius: 99px; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
-.notif-dropdown { position: absolute; top: calc(100% + 8px); right: 0; width: 320px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.25); z-index: 200; overflow: hidden; }
+.notif-dropdown { position: absolute; top: calc(100% + 8px); right: 0; width: 320px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.25); z-index: 1000; overflow: hidden; }
 .notif-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text); }
 .notif-mark-all { font-size: 11px; background: none; border: none; color: #0057B8; cursor: pointer; font-family: var(--font); }
 .notif-item { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }

@@ -3,7 +3,7 @@
  * Key priority: localStorage → .env
  */
 
-import { parseMdToTasks, buildFallbackParsePrompt, parseFallbackJson } from './mdParser';
+import { parseMdToTasks, parseFallbackJson } from './mdParser';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const LS_PREFIX = 'uzair_key_';
@@ -36,12 +36,24 @@ function getKey(modelId) {
   return getStoredKey(storedId) || import.meta.env[model.envKey] || null;
 }
 
+function getTeamNames() {
+  try {
+    const team = JSON.parse(localStorage.getItem('uzair_team') || '[]');
+    return team.map(m => m.name).filter(n => n && n !== 'Uzair');
+  } catch { return []; }
+}
+
 export function isModelAvailable(modelId) {
   if (modelId === 'free' || modelId === null) return true;
   return !!getKey(modelId);
 }
 
-export const SYSTEM_PROMPT = `You are a task management AI for Uzair Visuals, a remote growth execution studio. Today: ${TODAY}.
+export function buildSystemPrompt() {
+  const names = getTeamNames();
+  const assignLine = names.length > 0
+    ? `\n- Known assignable team members: ${names.join(', ')}. ALWAYS add | Assign: [Name] when any of these names are mentioned in the prompt.`
+    : '\n- If any person\'s name is mentioned for assignment, ALWAYS add | Assign: [Name]';
+  return `You are a task management AI for Uzair Visuals, a remote growth execution studio. Today: ${TODAY}.
 
 When the user describes work, respond ONLY with this Markdown format:
 
@@ -59,14 +71,20 @@ Rules:
 - 2–3 milestones for simple tasks, up to 4 for complex ones — no filler steps
 - Each milestone must be specific to THIS task — no generic "Review" or "Follow up" unless essential
 - Due dates: High = today, Medium = +3 days, Low = +7 days
-- Only add "| Assign: Name" if someone other than Uzair is mentioned
+- ALWAYS add | Assign: [Name] when user says "assign to", "for [Name]", "[Name] should", "[Name] will", or mentions a specific person doing the task${assignLine}
 - Only add "| Client: Name" if a specific client is mentioned
 - Skip "| Time:" unless user gives a specific time
 - For advice or non-task questions, respond normally — no task format needed`;
+}
 
 // Haiku-specific prompt — stricter to prevent splitting one request into many tasks
-const HAIKU_3DAY = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-const SYSTEM_PROMPT_HAIKU = `You are a task management AI for Uzair Visuals. Today: ${TODAY}.
+function buildHaikuPrompt() {
+  const names = getTeamNames();
+  const assignLine = names.length > 0
+    ? `\n- Known team members to assign: ${names.join(', ')}. Add | Assign: [Name] when mentioned.`
+    : '\n- Add | Assign: [Name] when a specific person is mentioned for the task';
+  const HAIKU_3DAY = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  return `You are a task management AI for Uzair Visuals. Today: ${TODAY}.
 
 CRITICAL: One user request = EXACTLY ONE task. Never create multiple - [ ] items for a single request.
 
@@ -91,8 +109,33 @@ Rules:
 - ONE task only — even if request mentions multiple items (3 reels, 5 posts, etc.)
 - 2–4 milestones, specific to THIS task, numbered format only
 - Milestones are NEVER separate - [ ] items
-- Omit Assign, Client, Time unless user mentions them
+- ALWAYS add | Assign: [Name] when a person is mentioned for assignment${assignLine}
 - For questions or advice, respond normally without task format`;
+}
+
+export function buildFallbackParsePrompt(rawText) {
+  const names = getTeamNames();
+  const assignNote = names.length > 0 ? `\nKnown assignable names: ${names.join(', ')}` : '';
+  return `Extract tasks from the following text and return a JSON array.
+Each task object must have these exact fields:
+{
+  "title": string,
+  "notes": string,
+  "priority": "high"|"medium"|"low",
+  "due_date": "YYYY-MM-DD or empty string",
+  "due_time": "HH:MM or empty string",
+  "assigned_to": "name of person to assign, or Uzair if none mentioned",
+  "workspace": "uzair_visuals"|"personal"|"client"|"team",
+  "client_tag": string,
+  "milestones": [{ "title": string, "instruction": string }]
+}
+${assignNote}
+
+Text:
+${rawText}
+
+Return ONLY the JSON array, no explanation, no markdown.`;
+}
 
 export async function sendToModel(modelId, messages) {
   switch (modelId) {
@@ -129,7 +172,7 @@ async function sendClaude(messages, modelName = 'claude-sonnet-4-20250514') {
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({ model: modelName, max_tokens: 2048, system: modelName.includes('haiku') ? SYSTEM_PROMPT_HAIKU : SYSTEM_PROMPT, messages }),
+    body: JSON.stringify({ model: modelName, max_tokens: 2048, system: modelName.includes('haiku') ? buildHaikuPrompt() : buildSystemPrompt(), messages }),
   });
 
   if (!res.ok) {
@@ -149,7 +192,7 @@ async function sendGPT4(messages) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'gpt-4o', max_tokens: 2048, messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages] }),
+    body: JSON.stringify({ model: 'gpt-4o', max_tokens: 2048, messages: [{ role: 'system', content: buildSystemPrompt() }, ...messages] }),
   });
 
   if (!res.ok) {
@@ -176,7 +219,7 @@ async function sendGemini(messages) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
         contents: geminiContents,
         generationConfig: { maxOutputTokens: 2048 },
       }),
@@ -199,7 +242,7 @@ async function sendGrok(messages) {
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'grok-3-latest', max_tokens: 2048, messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages] }),
+    body: JSON.stringify({ model: 'grok-3-latest', max_tokens: 2048, messages: [{ role: 'system', content: buildSystemPrompt() }, ...messages] }),
   });
 
   if (!res.ok) {

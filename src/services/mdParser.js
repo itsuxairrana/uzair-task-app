@@ -213,7 +213,7 @@ export function parseMdToTasks(markdown) {
         status: 'todo',
         due_date: meta['due'] || btMeta.due || '',
         due_time: meta['time'] || '',
-        assigned_to: meta['assign'] || 'Uzair',
+        assigned_to: meta['assign'] || meta['assigned'] || meta['assigned to'] || meta['assignee'] || 'Uzair',
         workspace: normalizeWorkspace(meta['project']),
         client_tag: meta['client'] && meta['client'] !== 'N/A' ? meta['client'] : platform,
         source: 'ai_parsed',

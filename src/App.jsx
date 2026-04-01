@@ -111,8 +111,7 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
           {activeTab === 'keys' && (
             <>
               <p className="settings-info">
-                Keys are saved in your browser (localStorage) — no restart needed.
-                The <strong>Free Local Parser</strong> always works without any key.
+                API keys are stored locally in your browser and never leave your device. The <strong>Free Local Parser</strong> works without any key.
               </p>
 
               <div className="settings-keys">
@@ -169,7 +168,7 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
               </div>
 
               <div className="settings-note">
-                Keys are stored only in your browser and never sent to any server other than the AI provider you choose.
+                Your keys are stored exclusively in your browser. They are only transmitted directly to the selected AI provider — never to any third-party server.
               </div>
             </>
           )}
@@ -272,7 +271,7 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
           {activeTab === 'team' && (
             <div className="team-section">
               <p className="settings-info">
-                Manage employees. Each employee gets their own login and sees only their assigned tasks.
+                Manage your team members. Each person receives a dedicated login and can only view tasks assigned to them.
               </p>
 
               {/* DB employees with password reset */}
@@ -294,7 +293,7 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
                         <input
                           className="sk-input"
                           type="password"
-                          placeholder="New password for this user"
+                          placeholder="Set new password"
                           value={resetPw[member.id] || ''}
                           onChange={e => setResetPw(p => ({...p, [member.id]: e.target.value}))}
                           autoComplete="new-password"
@@ -325,11 +324,11 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
               {/* Add employee form */}
               <div className="team-add-form" style={{flexDirection:'column',gap:8}}>
                 <div style={{display:'flex',gap:8}}>
-                  <input className="sk-input" type="text" placeholder="Full name" value={newName} onChange={e => setNewName(e.target.value)} />
-                  <input className="sk-input" type="email" placeholder="Email" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                  <input className="sk-input" style={{fontFamily:'var(--font)'}} type="text" placeholder="Full name" value={newName} onChange={e => setNewName(e.target.value)} />
+                  <input className="sk-input" style={{fontFamily:'var(--font)'}} type="email" placeholder="Email address" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
                 </div>
                 <div style={{display:'flex',gap:8}}>
-                  <input className="sk-input" type="password" placeholder="Password (min 6 chars)" value={newPass} onChange={e => setNewPass(e.target.value)} />
+                  <input className="sk-input" style={{fontFamily:'var(--font)'}} type="password" placeholder="Temporary password (min 6 characters)" value={newPass} onChange={e => setNewPass(e.target.value)} />
                   <button
                     className="sk-save-btn"
                     disabled={!newName.trim() || !newEmail.trim() || !newPass.trim()}
@@ -342,7 +341,7 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
               </div>
 
               <div className="settings-note">
-                Employees log in at <strong>task.uzairvisuals.com</strong> with their email and password. They see only tasks assigned to them.
+                Team members sign in at <strong>task.uzairvisuals.com</strong> using their email address and password. Each member has access only to their assigned tasks.
               </div>
             </div>
           )}
@@ -350,10 +349,11 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
           {/* ── Account tab ── */}
           {activeTab === 'account' && (
             <div className="team-section">
-              <p className="settings-info">Change your login password.</p>
+              <p className="settings-info">Update your admin account password.</p>
               <div className="team-add-form" style={{flexDirection:'column',gap:10}}>
                 <input
                   className="sk-input"
+                  style={{fontFamily:'var(--font)'}}
                   type="password"
                   placeholder="Current password"
                   value={pwCurrent}
@@ -362,14 +362,16 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
                 />
                 <input
                   className="sk-input"
+                  style={{fontFamily:'var(--font)'}}
                   type="password"
-                  placeholder="New password (min 8 chars)"
+                  placeholder="New password (minimum 8 characters)"
                   value={pwNew}
                   onChange={e => setPwNew(e.target.value)}
                   autoComplete="new-password"
                 />
                 <input
                   className="sk-input"
+                  style={{fontFamily:'var(--font)'}}
                   type="password"
                   placeholder="Confirm new password"
                   value={pwConfirm}
@@ -470,10 +472,32 @@ function AppShell({ authUser, onLogout }) {
     };
   }, []);
 
+  // Close notification dropdown on outside click
+  useEffect(() => {
+    if (!showNotifs) return;
+    const handler = (e) => {
+      if (!e.target.closest('.notif-wrap')) setShowNotifs(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showNotifs]);
+
   async function loadNotifications() {
     try {
       const data = await fetchNotifications();
-      setNotifications(data.notifications || []);
+      const newNotifs = data.notifications || [];
+      setNotifications(newNotifs);
+      // Auto-update task statuses in local store when employees complete tasks
+      const completedIds = newNotifs
+        .filter(n => n.type === 'task_completed' && n.task_id)
+        .map(n => n.task_id);
+      if (completedIds.length > 0) {
+        const { tasks, updateTask } = useTaskStore.getState();
+        completedIds.forEach(tid => {
+          const t = tasks.find(x => x.id === tid);
+          if (t && t.status !== 'done') updateTask(tid, { status: 'done' });
+        });
+      }
     } catch {}
   }
 
