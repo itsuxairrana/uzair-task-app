@@ -78,4 +78,7 @@ jobs:
           git push origin deploy
 
       - name: Trigger Hostinger deploy
-        run: curl -s -X POST "${{ secrets.HOSTINGER_WEBHOOK }}"
+        run: |
+          curl -s -X POST "${{ secrets.HOSTINGER_WEBHOOK }}"
+          sleep 10
+          curl -s "https://task.uzairvisuals.com/git-deploy.php?secret=uzair_deploy_2026"
