@@ -25,7 +25,7 @@ if ($method === 'POST') {
     $name     = trim($body['name'] ?? '');
     $email    = trim($body['email'] ?? '');
     $password = $body['password'] ?? 'Welcome@2026!';
-    $role     = $body['role'] === 'admin' ? 'admin' : 'employee';
+    $role     = ($body['role'] ?? '') === 'admin' ? 'admin' : 'employee';
 
     if (!$name || !$email) err('Name and email are required');
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) err('Invalid email address');
