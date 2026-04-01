@@ -7,37 +7,21 @@ if ($secret !== 'uzair_deploy_2026') {
 
 header('Content-Type: application/json');
 
-// Test which exec function is available
-$functions = ['exec', 'shell_exec', 'passthru', 'system', 'popen', 'proc_open'];
-$available = array_filter($functions, function($f) {
-    return function_exists($f) && !in_array($f, array_map('trim', explode(',', ini_get('disable_functions'))));
-});
-
-if (empty($available)) {
-    echo json_encode(['error' => 'No exec functions available', 'available' => [], 'ok' => false]);
-    exit;
+function run($cmd) {
+    $desc = [1 => ['pipe','w'], 2 => ['pipe','w']];
+    $proc = proc_open($cmd, $desc, $pipes, __DIR__);
+    if (!is_resource($proc)) return ['out' => '', 'err' => 'proc_open failed', 'code' => -1];
+    $out  = stream_get_contents($pipes[1]); fclose($pipes[1]);
+    $err  = stream_get_contents($pipes[2]); fclose($pipes[2]);
+    $code = proc_close($proc);
+    return ['out' => trim($out), 'err' => trim($err), 'code' => $code];
 }
 
-$cwd = __DIR__;
-$results = [];
+$fetch = run('git fetch origin');
+$reset = run('git reset --hard origin/deploy');
 
-if (function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))))) {
-    $results['fetch'] = shell_exec("cd " . escapeshellarg($cwd) . " && git fetch origin 2>&1");
-    $results['reset'] = shell_exec("cd " . escapeshellarg($cwd) . " && git reset --hard origin/deploy 2>&1");
-    $results['ok'] = true;
-} elseif (function_exists('exec') && !in_array('exec', array_map('trim', explode(',', ini_get('disable_functions'))))) {
-    exec("cd " . escapeshellarg($cwd) . " && git fetch origin 2>&1", $out1);
-    exec("cd " . escapeshellarg($cwd) . " && git reset --hard origin/deploy 2>&1", $out2);
-    $results['fetch'] = implode("\n", $out1);
-    $results['reset'] = implode("\n", $out2);
-    $results['ok'] = true;
-} else {
-    $results['error'] = 'exec/shell_exec disabled';
-    $results['ok'] = false;
-}
-
-$results['available_functions'] = array_values($available);
-$results['php_version'] = PHP_VERSION;
-$results['disable_functions'] = ini_get('disable_functions');
-
-echo json_encode($results, JSON_PRETTY_PRINT);
+echo json_encode([
+    'ok'    => $reset['code'] === 0,
+    'fetch' => $fetch,
+    'reset' => $reset,
+], JSON_PRETTY_PRINT);
