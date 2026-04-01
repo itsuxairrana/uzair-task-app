@@ -29,7 +29,7 @@ if ($method === 'GET') {
 
     // Attach milestones
     foreach ($tasks as &$task) {
-        $ms = db()->prepare("SELECT * FROM milestones WHERE task_id = ? ORDER BY rowid ASC");
+        $ms = db()->prepare("SELECT * FROM milestones WHERE task_id = ? ORDER BY id ASC");
         $ms->execute([$task['id']]);
         $task['milestones'] = $ms->fetchAll();
     }
