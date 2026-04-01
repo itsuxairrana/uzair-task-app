@@ -3,7 +3,7 @@ import { useTaskStore } from './store/taskStore';
 import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleClientId, getStoredGoogleClientId } from './services/googleAuth';
 import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
 import { getTeam, saveTeam } from './services/gmailApi';
-import { verifyToken, clearAuth, getUser, changePassword } from './services/authApi';
+import { verifyToken, clearAuth, getUser, changePassword, addTeamMember, fetchTeam } from './services/authApi';
 import { fetchNotifications, markNotificationsRead, resetEmployeePassword } from './services/taskSyncApi';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import WorkspaceTabs from './components/WorkspaceTabs';
@@ -31,7 +31,7 @@ const KEY_MODELS = [
 
 // ── Settings Modal ────────────────────────────────────────────────────────────
 
-function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout, dbTeam }) {
+function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout, dbTeam, onAddEmployee }) {
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(KEY_MODELS.map(m => [m.id, getStoredKey(m.id)]))
   );
@@ -334,7 +334,7 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
                     className="sk-save-btn"
                     disabled={!newName.trim() || !newEmail.trim() || !newPass.trim()}
                     onClick={() => {
-                      window.dispatchEvent(new CustomEvent('add_employee', { detail: { name: newName.trim(), email: newEmail.trim(), password: newPass } }));
+                      onAddEmployee(newName.trim(), newEmail.trim(), newPass);
                       setNewName(''); setNewEmail(''); setNewPass('');
                     }}
                   >+ Add Employee</button>
@@ -464,18 +464,8 @@ function AppShell({ authUser, onLogout }) {
     loadDbTeam();
     const notifInterval = setInterval(loadNotifications, 30000);
 
-    // Listen for add_employee event from settings modal
-    function onAddEmployee(e) {
-      const { name, email, password } = e.detail;
-      import('./services/authApi').then(({ addTeamMember }) => {
-        addTeamMember(name, email, password).then(loadDbTeam).catch(err => alert(err.message));
-      });
-    }
-    window.addEventListener('add_employee', onAddEmployee);
-
     return () => {
       window.removeEventListener('google_auth_change', onAuthChange);
-      window.removeEventListener('add_employee', onAddEmployee);
       clearInterval(notifInterval);
     };
   }, []);
@@ -489,10 +479,22 @@ function AppShell({ authUser, onLogout }) {
 
   async function loadDbTeam() {
     try {
-      const { fetchTeam } = await import('./services/authApi');
       const users = await fetchTeam();
-      setDbTeam(users.filter(u => u.role === 'employee'));
+      const employees = users.filter(u => u.role === 'employee');
+      setDbTeam(employees);
+      // Sync to localStorage so TaskForm dropdown shows DB employees
+      saveTeam(employees.map(u => ({ name: u.name, email: u.email })));
+      window.dispatchEvent(new Event('team_updated'));
     } catch {}
+  }
+
+  async function handleAddEmployee(name, email, password) {
+    try {
+      await addTeamMember(name, email, password);
+      await loadDbTeam();
+    } catch (e) {
+      alert(e.message);
+    }
   }
 
   async function handleGoogleSignIn() {
@@ -667,6 +669,7 @@ function AppShell({ authUser, onLogout }) {
           onGoogleDisconnect={handleGoogleSignOut}
           onLogout={onLogout}
           dbTeam={dbTeam}
+          onAddEmployee={handleAddEmployee}
         />
       )}
     </div>
