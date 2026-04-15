@@ -5,6 +5,7 @@ import TaskForm from './TaskForm';
 import { getTeam } from '../services/gmailApi';
 import MorningHQ from './agency/MorningHQ';
 import PlatformChecklist from './agency/PlatformChecklist';
+import RevenueDashboard  from './agency/RevenueDashboard';
 
 const STATUS_OPTIONS = ['all', 'todo', 'in_progress', 'done'];
 const PRIORITY_OPTIONS = ['all', 'high', 'medium', 'low'];
@@ -29,6 +30,7 @@ export default function Dashboard({ activeNav }) {
   // Agency module routes — before any other logic
   if (activeNav === 'morning_hq')         return <MorningHQ />;
   if (activeNav === 'platform_checklist') return <PlatformChecklist />;
+  if (activeNav === 'revenue')            return <RevenueDashboard />;
 
   // Sync view with sidebar nav
   const navView = activeNav === 'today' ? 'today' : activeNav === 'overdue' ? 'overdue' : 'all';
