@@ -28,13 +28,7 @@ export default function Dashboard({ activeNav }) {
     return () => window.removeEventListener('team_updated', refresh);
   }, []);
 
-  // Agency module routes — before any other logic
-  if (activeNav === 'morning_hq')         return <MorningHQ />;
-  if (activeNav === 'platform_checklist') return <PlatformChecklist />;
-  if (activeNav === 'revenue')            return <RevenueDashboard />;
-  if (activeNav === 'pipeline')           return <ClientPipeline />;
-
-  // Sync view with sidebar nav
+  // Sync view with sidebar nav — hooks must be declared before any early returns
   const navView = activeNav === 'today' ? 'today' : activeNav === 'overdue' ? 'overdue' : 'all';
   const [view, setView] = useState(navView);
   useEffect(() => { setView(navView); }, [navView]);
@@ -53,6 +47,12 @@ export default function Dashboard({ activeNav }) {
     const tags = [...new Set(allTasksRaw.map(t => t.client_tag).filter(Boolean))].sort();
     return tags;
   }, [allTasksRaw]);
+
+  // Agency module routes — after all hooks (React Rules of Hooks)
+  if (activeNav === 'morning_hq')         return <MorningHQ />;
+  if (activeNav === 'platform_checklist') return <PlatformChecklist />;
+  if (activeNav === 'revenue')            return <RevenueDashboard />;
+  if (activeNav === 'pipeline')           return <ClientPipeline />;
 
   function handleEdit(task) { setEditTask(task); setShowForm(true); }
   function handleAddNew() { setEditTask(null); setShowForm(true); }
