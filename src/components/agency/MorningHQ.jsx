@@ -30,6 +30,7 @@ export default function MorningHQ() {
     getTodayChecks, togglePlatformCheck, computeStreak,
     projects, getProposalsNeedingFollowUp, getProposalsNeedingUpworkFollowUp,
     updateClient, contentPosts, getUnpaidInvoices, updateUpworkProposal,
+    getOverdueInvoices, getThisMonthTotalPKR, revenueSettings,
   } = useAgencyStore();
 
   const { getTodayTasks, setTaskStatus } = useTaskStore();
@@ -43,6 +44,56 @@ export default function MorningHQ() {
   const todayStr = now.toISOString().split('T')[0];
   const todayChecks = getTodayChecks();
   const streak = computeStreak();
+
+  // ── Priority signal: first matching rule wins ──
+  function getPrioritySignal() {
+    // Rule 1 — overdue invoices
+    const overdueInv = getOverdueInvoices();
+    if (overdueInv.length > 0)
+      return `You have ${overdueInv.length} overdue invoice${overdueInv.length > 1 ? 's' : ''} — chase payments first.`;
+
+    // Rule 2 — revenue behind
+    const monthPKR  = getThisMonthTotalPKR();
+    const target    = revenueSettings?.monthlyTarget || 300000;
+    const daysLeft  = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
+    if (monthPKR < target * 0.4 && daysLeft > 15)
+      return `Revenue is behind — post a For Hire on Reddit and Upwork today.`;
+
+    // Rule 3 — Upwork follow-ups
+    const upwFU = getProposalsNeedingUpworkFollowUp();
+    if (upwFU.length >= 2) {
+      const days = Math.floor((new Date() - new Date(upwFU[0].applied_date)) / 86400000);
+      return `Follow up on "${upwFU[0].job_title}" and "${upwFU[1].job_title}" on Upwork — waiting ${days} days.`;
+    }
+
+    // Rule 4 — pipeline follow-ups
+    const pipeFU = getProposalsNeedingFollowUp();
+    if (pipeFU.length >= 2) {
+      const days = pipeFU[0].days_waiting;
+      return `Contact ${pipeFU[0].name} and ${pipeFU[1].name} — proposals sent ${days} days ago.`;
+    }
+
+    // Rule 5 — no content today and no content next 7 days
+    const next7 = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now); d.setDate(d.getDate() + i); return d.toISOString().split('T')[0];
+    });
+    const hasContent = contentPosts.some(p => next7.includes(p.date));
+    if (!hasContent)
+      return `Content calendar is empty — open it and plan 3 posts now.`;
+
+    // Rule 6 — project past deadline
+    const overdueProj = (projects || []).find(p => p.deadline && p.deadline < todayStr && p.deliverables?.some(d => !d.done));
+    if (overdueProj)
+      return `${overdueProj.client_name} project is past deadline.`;
+
+    // Rule 7 — low streak
+    if (streak < 3)
+      return `Your streak is ${streak} day${streak !== 1 ? 's' : ''} — check all 6 platforms today.`;
+
+    // Rule 8 — all clear
+    return `All clear — focus on delivering active projects.`;
+  }
+  const prioritySignal = getPrioritySignal();
   const donePlatforms = PLATFORMS.filter(p => todayChecks[p]).length;
 
   const todayTasks = getTodayTasks().filter(t => t.status !== 'done');
@@ -63,16 +114,22 @@ export default function MorningHQ() {
     <div className="morning-hq">
 
       {/* ── Section 1: Greeting ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <div className="morning-hq-greeting">{getGreeting()}, Uzair</div>
+      <div style={{ marginBottom: 20 }}>
+        <div className="morning-hq-greeting">{getGreeting()}, Uzair</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div className="morning-hq-date">{fmtDate(now)} · {fmtTime(now)}</div>
+          {streak > 0 && (
+            <span className="agency-badge agency-badge-orange" style={{ fontSize: 11, padding: '3px 10px' }}>
+              🔥 {streak} day streak
+            </span>
+          )}
         </div>
-        {streak > 0 && (
-          <span className="agency-badge agency-badge-orange" style={{ fontSize: 13, padding: '5px 12px' }}>
-            🔥 {streak} day streak
-          </span>
-        )}
+      </div>
+
+      {/* ── Priority signal box ── */}
+      <div className="agency-smart-action">
+        <div className="agency-smart-action-label">💡 Priority signal</div>
+        <div className="agency-smart-action-text">{prioritySignal}</div>
       </div>
 
       {/* ── Section 2: Platform chips ── */}
