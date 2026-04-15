@@ -9,6 +9,7 @@ import RevenueDashboard  from './agency/RevenueDashboard';
 import ClientPipeline    from './agency/ClientPipeline';
 import ProjectTracker    from './agency/ProjectTracker';
 import TeamManager       from './agency/TeamManager';
+import ContentCalendar   from './agency/ContentCalendar';
 
 const STATUS_OPTIONS = ['all', 'todo', 'in_progress', 'done'];
 const PRIORITY_OPTIONS = ['all', 'high', 'medium', 'low'];
@@ -57,6 +58,7 @@ export default function Dashboard({ activeNav }) {
   if (activeNav === 'pipeline')           return <ClientPipeline />;
   if (activeNav === 'projects')           return <ProjectTracker />;
   if (activeNav === 'team')              return <TeamManager />;
+  if (activeNav === 'content_calendar') return <ContentCalendar />;
 
   function handleEdit(task) { setEditTask(task); setShowForm(true); }
   function handleAddNew() { setEditTask(null); setShowForm(true); }
