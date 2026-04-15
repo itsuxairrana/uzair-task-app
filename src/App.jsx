@@ -463,17 +463,22 @@ function AppShell({ authUser, onLogout }) {
   const [showNotifs, setShowNotifs]           = useState(false);
   const [dbTeam, setDbTeam]                   = useState([]);
 
-  // ── Agency sidebar badges ──
-  const overdueInvoices     = useAgencyStore(s => s.getOverdueInvoices?.() || []);
-  const proposalFollowUps   = useAgencyStore(s => s.getProposalsNeedingFollowUp?.() || []);
-  const upworkFollowUps     = useAgencyStore(s => s.getProposalsNeedingUpworkFollowUp?.() || []);
-  const pendingTeamTasks    = useAgencyStore(s => (s.teamTasks||[]).filter(t => t.status === 'pending_review'));
-  const overdueDeliverables = useAgencyStore(s => {
-    const today = new Date().toISOString().split('T')[0];
-    return (s.projects||[]).filter(p => p.deadline && p.deadline < today && p.deliverables?.some(d => !d.done));
-  });
-  const todayChecks       = useAgencyStore(s => s.getTodayChecks?.() || {});
-  const allPlatformsDone  = ['fiverr','upwork','linkedin','reddit','discord','dribbble'].every(p => todayChecks[p]);
+  // ── Agency sidebar badges — select raw state slices (stable refs) then compute outside ──
+  const agencyInvoices    = useAgencyStore(s => s.invoices);
+  const agencyClients     = useAgencyStore(s => s.clients);
+  const agencyUpwork      = useAgencyStore(s => s.upworkProposals);
+  const agencyTeamTasks   = useAgencyStore(s => s.teamTasks);
+  const agencyProjects    = useAgencyStore(s => s.projects);
+  const agencyDailyChecks = useAgencyStore(s => s.dailyChecks);
+
+  const _today = new Date().toISOString().split('T')[0];
+  const overdueInvoices     = (agencyInvoices  || []).filter(i => !i.paid && i.due_date && i.due_date < _today);
+  const proposalFollowUps   = (agencyClients   || []).filter(c => c.stage === 'proposal' && c.proposal_sent_date && Math.floor((new Date() - new Date(c.proposal_sent_date)) / 86400000) >= 2);
+  const upworkFollowUps     = (agencyUpwork    || []).filter(p => p.status === 'applied' && !p.follow_up_sent && p.applied_date && Math.floor((new Date() - new Date(p.applied_date)) / 86400000) >= 5);
+  const pendingTeamTasks    = (agencyTeamTasks || []).filter(t => t.status === 'pending_review');
+  const overdueDeliverables = (agencyProjects  || []).filter(p => p.deadline && p.deadline < _today && p.deliverables?.some(d => !d.done));
+  const todayChecks         = (agencyDailyChecks || {})[_today] || {};
+  const allPlatformsDone    = ['fiverr','upwork','linkedin','reddit','discord','dribbble'].every(p => todayChecks[p]);
   const BADGES = {
     platform_checklist: allPlatformsDone ? null : { type: 'dot', color: 'green' },
     revenue:   overdueInvoices.length     ? { type: 'count', value: overdueInvoices.length,     color: 'orange' } : null,
