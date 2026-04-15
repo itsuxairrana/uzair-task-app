@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTaskStore } from './store/taskStore';
+import { useAgencyStore } from './store/agencyStore';
 import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleClientId, getStoredGoogleClientId } from './services/googleAuth';
 import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
 import { getTeam, saveTeam } from './services/gmailApi';
@@ -14,10 +15,19 @@ import LoginScreen from './components/LoginScreen';
 import './App.css';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1" y="1" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.35"/><rect x="8.5" y="1" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.35"/><rect x="1" y="8.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.35"/><rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.35"/></svg> },
-  { id: 'today',     label: 'Today',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.25" y="2" width="12.5" height="11.5" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M1.25 5.5h12.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M4.5 1v2M10.5 1v2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M4.5 8.5h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-  { id: 'overdue',   label: 'Overdue',   icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 4.5v3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".75" fill="currentColor"/></svg> },
-  { id: 'settings',  label: 'Settings',  icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2.25" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 1.5v1.25M7.5 12.25V13.5M1.5 7.5h1.25M12.25 7.5H13.5M3.1 3.1l.9.9M11 11l.9.9M3.1 11.9l.9-.9M11 4l.9-.9" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
+  { id: 'morning_hq',  label: 'Morning HQ',  icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2.5" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M2.9 2.9l1.1 1.1M11 11l1.1 1.1M11 2.9l-1.1 1.1M4 11l-1.1 1.1" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
+  { id: 'today',       label: 'Today',       icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.25" y="2" width="12.5" height="11.5" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M1.25 5.5h12.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M4.5 1v2M10.5 1v2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M4.5 8.5h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { id: 'overdue',     label: 'Overdue',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 4.5v3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".75" fill="currentColor"/></svg> },
+  { id: 'agency_div',  label: 'AGENCY',      type: 'divider' },
+  { id: 'platform_checklist', label: 'Daily Platforms', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 8l3.5 3.5L13 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+  { id: 'revenue',     label: 'Revenue',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 4v7M5.5 5.5h3a1 1 0 010 2h-2a1 1 0 000 2h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
+  { id: 'pipeline',    label: 'Clients',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="3" height="9" rx="1" stroke="currentColor" strokeWidth="1.35"/><rect x="6" y="5" width="3" height="7" rx="1" stroke="currentColor" strokeWidth="1.35"/><rect x="11" y="1" width="3" height="11" rx="1" stroke="currentColor" strokeWidth="1.35"/></svg> },
+  { id: 'projects',    label: 'Projects',    icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M4.5 5.5h6M4.5 7.5h6M4.5 9.5h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
+  { id: 'team',        label: 'Team',        icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="5" cy="4.5" r="2" stroke="currentColor" strokeWidth="1.35"/><circle cx="10.5" cy="4.5" r="2" stroke="currentColor" strokeWidth="1.35"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M10.5 8.5c1.9.4 3.5 2 3.5 3.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
+  { id: 'content_calendar', label: 'Content', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.25" y="2" width="12.5" height="11.5" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M1.25 5.5h12.5" stroke="currentColor" strokeWidth="1.35"/><path d="M4.5 1v2M10.5 1v2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><circle cx="5" cy="9" r=".75" fill="currentColor"/><circle cx="7.5" cy="9" r=".75" fill="currentColor"/><circle cx="10" cy="9" r=".75" fill="currentColor"/></svg> },
+  { id: 'upwork_log',  label: 'Upwork Log',  icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="3.5" width="12" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.35"/><path d="M5 3.5V2.5a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" strokeWidth="1.35"/><path d="M5 7.5h5M5 9.5h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
+  { id: 'weekly_review', label: 'Weekly Review', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1.5v3M7.5 10.5v3M1.5 7.5h3M10.5 7.5h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><circle cx="7.5" cy="7.5" r="3" stroke="currentColor" strokeWidth="1.35"/></svg> },
+  { id: 'settings',    label: 'Settings',    icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2.25" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 1.5v1.25M7.5 12.25V13.5M1.5 7.5h1.25M12.25 7.5H13.5M3.1 3.1l.9.9M11 11l.9.9M3.1 11.9l.9-.9M11 4l.9-.9" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
 ];
 
 // Models that have API keys (excludes 'free').
@@ -447,11 +457,31 @@ function AppShell({ authUser, onLogout }) {
   const [showConfirm, setShowConfirm]         = useState(false);
   const [chatOpen, setChatOpen]               = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeNav, setActiveNav]             = useState('dashboard');
+  const [activeNav, setActiveNav]             = useState('morning_hq');
   const [showSettings, setShowSettings]       = useState(false);
   const [notifications, setNotifications]     = useState([]);
   const [showNotifs, setShowNotifs]           = useState(false);
   const [dbTeam, setDbTeam]                   = useState([]);
+
+  // ── Agency sidebar badges ──
+  const overdueInvoices     = useAgencyStore(s => s.getOverdueInvoices?.() || []);
+  const proposalFollowUps   = useAgencyStore(s => s.getProposalsNeedingFollowUp?.() || []);
+  const upworkFollowUps     = useAgencyStore(s => s.getProposalsNeedingUpworkFollowUp?.() || []);
+  const pendingTeamTasks    = useAgencyStore(s => (s.teamTasks||[]).filter(t => t.status === 'pending_review'));
+  const overdueDeliverables = useAgencyStore(s => {
+    const today = new Date().toISOString().split('T')[0];
+    return (s.projects||[]).filter(p => p.deadline && p.deadline < today && p.deliverables?.some(d => !d.done));
+  });
+  const todayChecks       = useAgencyStore(s => s.getTodayChecks?.() || {});
+  const allPlatformsDone  = ['fiverr','upwork','linkedin','reddit','discord','dribbble'].every(p => todayChecks[p]);
+  const BADGES = {
+    platform_checklist: allPlatformsDone ? null : { type: 'dot', color: 'green' },
+    revenue:   overdueInvoices.length     ? { type: 'count', value: overdueInvoices.length,     color: 'orange' } : null,
+    pipeline:  proposalFollowUps.length   ? { type: 'count', value: proposalFollowUps.length,   color: 'orange' } : null,
+    projects:  overdueDeliverables.length ? { type: 'count', value: overdueDeliverables.length, color: 'red'    } : null,
+    team:      pendingTeamTasks.length    ? { type: 'count', value: pendingTeamTasks.length,    color: 'orange' } : null,
+    upwork_log:upworkFollowUps.length     ? { type: 'count', value: upworkFollowUps.length,     color: 'orange' } : null,
+  };
 
   useEffect(() => {
     initGoogleAuth();
@@ -566,17 +596,31 @@ function AppShell({ authUser, onLogout }) {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map(item => (
-            <button
-              key={item.id}
-              className={'nav-item' + (activeNav === item.id ? ' nav-active' : '')}
-              onClick={() => handleNav(item.id)}
-              title={sidebarCollapsed ? item.label : ''}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {!sidebarCollapsed && <span className="nav-label">{item.label}</span>}
-            </button>
-          ))}
+          {NAV_ITEMS.map(item => {
+            if (item.type === 'divider') {
+              return !sidebarCollapsed
+                ? <div key={item.id} className="nav-section-label">{item.label}</div>
+                : <div key={item.id} className="nav-divider-line" />;
+            }
+            const badge = BADGES[item.id];
+            return (
+              <button
+                key={item.id}
+                className={'nav-item' + (activeNav === item.id ? ' nav-active' : '')}
+                onClick={() => handleNav(item.id)}
+                title={sidebarCollapsed ? item.label : ''}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                {!sidebarCollapsed && <span className="nav-label">{item.label}</span>}
+                {badge?.type === 'count' && (
+                  <span className={`nav-badge nav-badge-${badge.color}`}>{badge.value}</span>
+                )}
+                {badge?.type === 'dot' && (
+                  <span className={`nav-badge-dot nav-badge-dot-${badge.color}`} />
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="sidebar-bottom">

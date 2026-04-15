@@ -3,6 +3,7 @@ import { useTaskStore } from '../store/taskStore';
 import TaskCard from './TaskCard';
 import TaskForm from './TaskForm';
 import { getTeam } from '../services/gmailApi';
+import MorningHQ from './agency/MorningHQ';
 
 const STATUS_OPTIONS = ['all', 'todo', 'in_progress', 'done'];
 const PRIORITY_OPTIONS = ['all', 'high', 'medium', 'low'];
@@ -23,6 +24,9 @@ export default function Dashboard({ activeNav }) {
     window.addEventListener('team_updated', refresh);
     return () => window.removeEventListener('team_updated', refresh);
   }, []);
+
+  // Agency module routes — before any other logic
+  if (activeNav === 'morning_hq') return <MorningHQ />;
 
   // Sync view with sidebar nav
   const navView = activeNav === 'today' ? 'today' : activeNav === 'overdue' ? 'overdue' : 'all';
