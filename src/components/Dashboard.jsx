@@ -6,6 +6,7 @@ import { getTeam } from '../services/gmailApi';
 import MorningHQ from './agency/MorningHQ';
 import PlatformChecklist from './agency/PlatformChecklist';
 import RevenueDashboard  from './agency/RevenueDashboard';
+import ClientPipeline    from './agency/ClientPipeline';
 
 const STATUS_OPTIONS = ['all', 'todo', 'in_progress', 'done'];
 const PRIORITY_OPTIONS = ['all', 'high', 'medium', 'low'];
@@ -31,6 +32,7 @@ export default function Dashboard({ activeNav }) {
   if (activeNav === 'morning_hq')         return <MorningHQ />;
   if (activeNav === 'platform_checklist') return <PlatformChecklist />;
   if (activeNav === 'revenue')            return <RevenueDashboard />;
+  if (activeNav === 'pipeline')           return <ClientPipeline />;
 
   // Sync view with sidebar nav
   const navView = activeNav === 'today' ? 'today' : activeNav === 'overdue' ? 'overdue' : 'all';
