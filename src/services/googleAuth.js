@@ -23,6 +23,7 @@ let tokenClient = null;
 const GC_ID_KEY      = 'uzair_google_client_id';
 const TOKEN_KEY      = 'uzair_google_token';
 const TOKEN_EXP_KEY  = 'uzair_google_token_exp';
+const WAS_AUTHED_KEY = 'uzair_google_was_authed';
 
 // Restore token from localStorage on module load
 let accessToken  = localStorage.getItem(TOKEN_KEY) || null;
@@ -78,6 +79,7 @@ export async function initGoogleAuth() {
       tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
       localStorage.setItem(TOKEN_KEY, accessToken);
       localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
+      localStorage.setItem(WAS_AUTHED_KEY, '1');
       fetchUserInfo(accessToken);
     },
   });
@@ -100,6 +102,7 @@ export function signIn() {
       tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
       localStorage.setItem(TOKEN_KEY, accessToken);
       localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
+      localStorage.setItem(WAS_AUTHED_KEY, '1');
       fetchUserInfo(accessToken).then(resolve).catch(resolve);
     };
     tokenClient.requestAccessToken({ prompt: 'consent' });
@@ -116,6 +119,7 @@ export function signOut() {
   localStorage.removeItem('google_user');
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(TOKEN_EXP_KEY);
+  localStorage.removeItem(WAS_AUTHED_KEY);
   window.dispatchEvent(new Event('google_auth_change'));
 }
 
@@ -158,4 +162,42 @@ export function getGoogleUser() {
   } catch {
     return null;
   }
+}
+
+/** Check if user previously connected Google (even if token is now expired). */
+export function hadPreviousAuth() {
+  return !!localStorage.getItem(WAS_AUTHED_KEY);
+}
+
+/**
+ * Attempt silent token refresh — calls requestAccessToken with prompt:'' so no popup
+ * appears if the user's Google session is still active.
+ * Resolves to true if refreshed, false if user must reconnect manually.
+ */
+export function attemptSilentRefresh() {
+  return new Promise((resolve) => {
+    if (!tokenClient) { resolve(false); return; }
+    if (isSignedIn()) { resolve(true); return; }
+    if (!hadPreviousAuth()) { resolve(false); return; }
+
+    const timeout = setTimeout(() => resolve(false), 8000);
+
+    tokenClient.callback = (tokenResponse) => {
+      clearTimeout(timeout);
+      if (tokenResponse.error) { resolve(false); return; }
+      accessToken = tokenResponse.access_token;
+      tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
+      localStorage.setItem(TOKEN_KEY, accessToken);
+      localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
+      localStorage.setItem(WAS_AUTHED_KEY, '1');
+      fetchUserInfo(accessToken).then(() => resolve(true)).catch(() => resolve(true));
+    };
+
+    try {
+      tokenClient.requestAccessToken({ prompt: '' });
+    } catch {
+      clearTimeout(timeout);
+      resolve(false);
+    }
+  });
 }

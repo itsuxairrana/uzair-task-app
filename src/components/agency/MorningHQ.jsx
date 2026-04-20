@@ -2,11 +2,19 @@ import { useState, useEffect } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
 import { useTaskStore } from '../../store/taskStore';
 
-const PLATFORMS = ['fiverr', 'upwork', 'linkedin', 'reddit', 'discord', 'dribbble'];
-const PLATFORM_COLORS = {
-  fiverr: '#1DBF73', upwork: '#14A800', linkedin: '#0A66C2',
-  reddit: '#FF4500', discord: '#5865F2', dribbble: '#EA4C89',
+const EMPTY_PLATFORM = { id: '', name: '', color: '#0057B8', tasks: '' };
+
+const DAILY_THEME = {
+  1: { label: 'Outreach day',          sub: 'Reddit + Discord + LinkedIn connections + Behance',      tasks: ['Post [FOR HIRE] on Reddit','Message in Discord server','Send 10 LinkedIn connections','Update Behance case study'] },
+  2: { label: 'Content day',           sub: 'LinkedIn post #1 + Instagram + client work',             tasks: ['Publish LinkedIn post #1','Post Instagram Story','Work on active client project','Reply to all DMs & comments'] },
+  3: { label: 'Portfolio + Discovery', sub: 'Dribbble + research + Discord',                          tasks: ['Post/comment on Dribbble','Research 3 prospects','Post in Discord community','Review analytics'] },
+  4: { label: 'Content + Learning',    sub: 'LinkedIn post #2 + 90 min learning block',               tasks: ['Publish LinkedIn post #2','90 min learning block','Follow up on proposals','Check Upwork messages'] },
+  5: { label: 'Publishing day',        sub: 'LinkedIn post #3 + Blog post + Pinterest',               tasks: ['Publish LinkedIn post #3','Publish blog post','Post 3 Pinterest pins','Weekly invoice check'] },
+  6: { label: 'Deep work',             sub: 'Client delivery only, no social',                        tasks: ['Deliver client work','No social media','Review project feedback','Plan next week\'s content'] },
+  0: { label: 'Planning day',          sub: 'Cowork workers + Weekly Review + load calendar',         tasks: ['Brief Cowork workers','Complete Weekly Review','Load content calendar','Set top 3 goals for Monday'] },
 };
+
+const THEME_CHECKS_PREFIX = 'uzair_daily_theme_checks_';
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -31,7 +39,40 @@ export default function MorningHQ() {
     projects, getProposalsNeedingFollowUp, getProposalsNeedingUpworkFollowUp,
     updateClient, contentPosts, getUnpaidInvoices, updateUpworkProposal,
     getOverdueInvoices, getThisMonthTotalPKR, revenueSettings,
+    platforms, addPlatform, updatePlatform, removePlatform,
   } = useAgencyStore();
+
+  const [showPlatformEdit, setShowPlatformEdit] = useState(false);
+  const [editingPlatform,  setEditingPlatform]  = useState(null);
+  const [platformForm,     setPlatformForm]     = useState(EMPTY_PLATFORM);
+
+  const todayDOW   = now.getDay();
+  const todayTheme = DAILY_THEME[todayDOW];
+  const themeKey   = THEME_CHECKS_PREFIX + todayStr;
+  const [themeChecks, setThemeChecks] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(themeKey)) || {}; } catch { return {}; }
+  });
+  function toggleThemeCheck(idx) {
+    const updated = { ...themeChecks, [idx]: !themeChecks[idx] };
+    setThemeChecks(updated);
+    localStorage.setItem(themeKey, JSON.stringify(updated));
+  }
+  const themeDone  = todayTheme.tasks.filter((_, i) => themeChecks[i]).length;
+  const themeTotal = todayTheme.tasks.length;
+
+  function openAddPlatform() { setPlatformForm({ ...EMPTY_PLATFORM }); setEditingPlatform(null); }
+  function openEditPlatform(p) { setPlatformForm({ id: p.id, name: p.name, color: p.color, tasks: p.tasks }); setEditingPlatform(p); }
+  function handlePlatformSubmit(e) {
+    e.preventDefault();
+    if (editingPlatform) {
+      updatePlatform(editingPlatform.id, { name: platformForm.name, color: platformForm.color, tasks: platformForm.tasks });
+    } else {
+      const id = platformForm.name.toLowerCase().replace(/\s+/g, '_');
+      addPlatform({ id, name: platformForm.name, color: platformForm.color, tasks: platformForm.tasks });
+    }
+    setEditingPlatform(null);
+    setPlatformForm(EMPTY_PLATFORM);
+  }
 
   const { getTodayTasks, setTaskStatus } = useTaskStore();
 
@@ -88,13 +129,13 @@ export default function MorningHQ() {
 
     // Rule 7 — low streak
     if (streak < 3)
-      return `Your streak is ${streak} day${streak !== 1 ? 's' : ''} — check all 6 platforms today.`;
+      return `Your streak is ${streak} day${streak !== 1 ? 's' : ''} — check all ${platforms.length} platforms today.`;
 
     // Rule 8 — all clear
     return `All clear — focus on delivering active projects.`;
   }
   const prioritySignal = getPrioritySignal();
-  const donePlatforms = PLATFORMS.filter(p => todayChecks[p]).length;
+  const donePlatforms = platforms.filter(p => todayChecks[p.id]).length;
 
   const todayTasks = getTodayTasks().filter(t => t.status !== 'done');
   const todayTasksShown = todayTasks.slice(0, 5);
@@ -134,28 +175,115 @@ export default function MorningHQ() {
 
       {/* ── Section 2: Platform chips ── */}
       <div className="agency-card" style={{ marginBottom: 14 }}>
-        <div className="morning-section-label" style={{ marginBottom: 10 }}>
-          Platforms — {donePlatforms}/6 done today
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div className="morning-section-label" style={{ marginBottom: 0 }}>
+            Platforms — {donePlatforms}/{platforms.length} done today
+          </div>
+          <button
+            onClick={() => setShowPlatformEdit(true)}
+            title="Edit platforms"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 14, padding: '2px 4px', lineHeight: 1 }}
+          >✏</button>
         </div>
         <div className="morning-hq-platform-chips">
-          {PLATFORMS.map(p => (
+          {platforms.map(p => (
             <button
-              key={p}
-              className={'platform-chip' + (todayChecks[p] ? ' done' : '')}
-              onClick={() => togglePlatformCheck(p)}
-              style={{ borderColor: todayChecks[p] ? PLATFORM_COLORS[p] + '99' : undefined }}
+              key={p.id}
+              className={'platform-chip' + (todayChecks[p.id] ? ' done' : '')}
+              onClick={() => togglePlatformCheck(p.id)}
+              style={{ borderColor: todayChecks[p.id] ? p.color + '99' : undefined }}
             >
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: PLATFORM_COLORS[p], flexShrink: 0, display: 'inline-block' }} />
-              {p.charAt(0).toUpperCase() + p.slice(1)}
-              {todayChecks[p] && <span style={{ color: '#16a34a', fontSize: 11 }}>✓</span>}
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.color, flexShrink: 0, display: 'inline-block' }} />
+              {p.name}
+              {todayChecks[p.id] && <span style={{ color: '#16a34a', fontSize: 11 }}>✓</span>}
             </button>
           ))}
         </div>
-        {donePlatforms === 6 && (
+        {platforms.length > 0 && donePlatforms === platforms.length && (
           <div className="agency-success-banner" style={{ marginTop: 10, marginBottom: 0 }}>
             🎯 All platforms active today!
           </div>
         )}
+      </div>
+
+      {/* ── Platform edit modal ── */}
+      {showPlatformEdit && (
+        <div className="agency-modal-overlay" onClick={e => e.target === e.currentTarget && setShowPlatformEdit(false)}>
+          <div className="agency-modal" style={{ maxWidth: 480 }}>
+            <div className="agency-modal-title">Edit Platforms</div>
+            <div style={{ marginBottom: 16 }}>
+              {platforms.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, flexShrink: 0, display: 'inline-block' }} />
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.name}</span>
+                  <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={() => openEditPlatform(p)}>Edit</button>
+                  <button className="agency-btn agency-btn-danger agency-btn-sm" onClick={() => { if (confirm(`Remove ${p.name}?`)) removePlatform(p.id); }}>✕</button>
+                </div>
+              ))}
+            </div>
+            {editingPlatform === null && platformForm.name === '' ? (
+              <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={openAddPlatform}>+ Add Platform</button>
+            ) : (
+              <form onSubmit={handlePlatformSubmit} style={{ marginTop: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 8, marginBottom: 8 }}>
+                  <div className="agency-form-row" style={{ margin: 0 }}>
+                    <label className="agency-form-label">Name</label>
+                    <input className="agency-form-input" required value={platformForm.name} onChange={e => setPlatformForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Twitter" />
+                  </div>
+                  <div className="agency-form-row" style={{ margin: 0 }}>
+                    <label className="agency-form-label">Color</label>
+                    <input type="color" value={platformForm.color} onChange={e => setPlatformForm(f => ({ ...f, color: e.target.value }))} style={{ width: '100%', height: 36, border: 'none', borderRadius: 6, cursor: 'pointer' }} />
+                  </div>
+                </div>
+                <div className="agency-form-row" style={{ margin: '0 0 8px' }}>
+                  <label className="agency-form-label">Daily tasks</label>
+                  <input className="agency-form-input" value={platformForm.tasks} onChange={e => setPlatformForm(f => ({ ...f, tasks: e.target.value }))} placeholder="Task 1 · Task 2 · Task 3" />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="agency-btn agency-btn-secondary agency-btn-sm" onClick={() => { setEditingPlatform(null); setPlatformForm(EMPTY_PLATFORM); }}>Cancel</button>
+                  <button type="submit" className="agency-btn agency-btn-primary agency-btn-sm">{editingPlatform ? 'Save' : 'Add'}</button>
+                </div>
+              </form>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="agency-btn agency-btn-secondary" onClick={() => setShowPlatformEdit(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Today's focus card ── */}
+      <div className="agency-card" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div>
+            <div className="morning-section-label" style={{ marginBottom: 2 }}>{todayTheme.label}</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>{todayTheme.sub}</div>
+          </div>
+          <span className="agency-badge agency-badge-blue" style={{ fontSize: 11 }}>{themeDone}/{themeTotal}</span>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          {todayTheme.tasks.map((task, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < themeTotal - 1 ? '1px solid #f8fafc' : 'none' }}>
+              <button
+                onClick={() => toggleThemeCheck(i)}
+                style={{
+                  width: 16, height: 16, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
+                  border: `1.5px solid ${themeChecks[i] ? '#22c55e' : '#cbd5e1'}`,
+                  background: themeChecks[i] ? '#22c55e' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                }}
+              >
+                {themeChecks[i] && <span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span>}
+              </button>
+              <span style={{ fontSize: 13, color: themeChecks[i] ? '#94a3b8' : '#334155', textDecoration: themeChecks[i] ? 'line-through' : 'none' }}>
+                {task}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: '#f1f5f9', borderRadius: 99, height: 6, overflow: 'hidden' }}>
+          <div style={{ height: '100%', background: themeDone === themeTotal ? '#22c55e' : '#0057B8', width: `${Math.round((themeDone / themeTotal) * 100)}%`, borderRadius: 99, transition: 'width .3s' }} />
+        </div>
       </div>
 
       {/* ── Sections 3 + 4: Tasks + Projects grid ── */}

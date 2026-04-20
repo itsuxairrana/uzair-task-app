@@ -12,6 +12,8 @@ const KEYS = {
   content:         'uzair_agency_content',
   upworkProposals: 'uzair_agency_upwork_proposals',
   weeklyNotes:     'uzair_agency_weekly_notes',
+  teamMembers:     'uzair_agency_team_members',
+  platforms:       'uzair_agency_platforms',
 };
 
 const DEFAULT_REV = { monthlyTarget: 150000, usdRate: 278, gbpRate: 350 };
@@ -45,7 +47,8 @@ export const useAgencyStore = create((set, get) => ({
 
   computeStreak() {
     const checks = get().dailyChecks;
-    const ps = ['fiverr','upwork','linkedin','reddit','discord','dribbble'];
+    const ps = get().platforms.map(p => p.id);
+    if (!ps.length) return 0;
     let streak = 0;
     const d = new Date(); d.setDate(d.getDate() - 1);
     while (streak < 365) {
@@ -281,5 +284,64 @@ export const useAgencyStore = create((set, get) => ({
   },
 
   getWeeklyNote(weekKey) { return get().weeklyNotes[weekKey] || ''; },
+
+  // ── TEAM MEMBERS ─────────────────────────────────────────────────────────
+  teamMembers: load(KEYS.teamMembers, ['Junaid', 'Hamza', 'Collaborator']),
+
+  addTeamMember(name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    set(st => {
+      if (st.teamMembers.includes(trimmed)) return {};
+      const a = [...st.teamMembers, trimmed];
+      save(KEYS.teamMembers, a);
+      return { teamMembers: a };
+    });
+  },
+
+  removeTeamMember(name) {
+    const hasActive = get().teamTasks.some(t => t.assignee === name && t.status !== 'done');
+    if (hasActive) return false;
+    set(st => {
+      const a = st.teamMembers.filter(m => m !== name);
+      save(KEYS.teamMembers, a);
+      return { teamMembers: a };
+    });
+    return true;
+  },
+
+  // ── PLATFORMS ────────────────────────────────────────────────────────────
+  platforms: load(KEYS.platforms, [
+    { id: 'linkedin',  name: 'LinkedIn',  color: '#0A66C2', tasks: 'Post content · Send 10 connections · Comment on 5 posts' },
+    { id: 'reddit',    name: 'Reddit',    color: '#FF4500', tasks: 'Post [FOR HIRE] · Reply to 2 hiring threads' },
+    { id: 'discord',   name: 'Discord',   color: '#5865F2', tasks: 'Paste helpful message in HeyGen server' },
+    { id: 'dribbble',  name: 'Dribbble',  color: '#EA4C89', tasks: 'Post shot OR like/comment on 5 others' },
+    { id: 'behance',   name: 'Behance',   color: '#1769FF', tasks: 'Update 1 project case study' },
+    { id: 'instagram', name: 'Instagram', color: '#E1306C', tasks: 'Repurpose LinkedIn post · Post Stories' },
+  ]),
+
+  addPlatform(platform) {
+    set(st => {
+      const a = [...st.platforms, platform];
+      save(KEYS.platforms, a);
+      return { platforms: a };
+    });
+  },
+
+  updatePlatform(id, updates) {
+    set(st => {
+      const a = st.platforms.map(p => p.id === id ? { ...p, ...updates } : p);
+      save(KEYS.platforms, a);
+      return { platforms: a };
+    });
+  },
+
+  removePlatform(id) {
+    set(st => {
+      const a = st.platforms.filter(p => p.id !== id);
+      save(KEYS.platforms, a);
+      return { platforms: a };
+    });
+  },
 
 }));

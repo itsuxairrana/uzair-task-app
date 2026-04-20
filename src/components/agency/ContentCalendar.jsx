@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
 import { getStoredKey } from '../../services/aiRouter';
 
@@ -25,6 +25,63 @@ const DAY_NAMES  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 const EMPTY = { platform: 'linkedin', post_type: 'for_hire', topic: '', draft: '', status: 'planned', date: '' };
+
+const DAY_OF_WEEK = { monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6, sunday:0 };
+
+function getNextWeekday(targetDow) {
+  const today = new Date();
+  const todayDow = today.getDay();
+  let diff = targetDow - todayDow;
+  if (diff <= 0) diff += 7;
+  const d = new Date(today);
+  d.setDate(today.getDate() + diff);
+  return toISO(d);
+}
+
+function detectPlatformAndDate(heading) {
+  const h = heading.toLowerCase();
+  let platform = 'linkedin';
+  let date = toISO(new Date());
+
+  if (h.includes('for hire') || h.includes('reddit')) {
+    platform = 'reddit';
+  } else if (h.includes('dribbble')) {
+    platform = 'dribbble';
+  } else if (h.includes('pinterest') || h.includes('pin ')) {
+    platform = 'pinterest';
+  } else {
+    platform = 'linkedin';
+  }
+
+  for (const [dayName, dow] of Object.entries(DAY_OF_WEEK)) {
+    if (h.includes(dayName)) {
+      date = getNextWeekday(dow);
+      break;
+    }
+  }
+
+  return { platform, date };
+}
+
+function parseMdFile(text) {
+  const sections = text.split(/^##\s+/m).filter(s => s.trim());
+  const posts = [];
+  for (const section of sections) {
+    const lines = section.split('\n');
+    const heading = lines[0].trim();
+    const body = lines.slice(1).join('\n').trim();
+    if (!body) continue;
+    const { platform, date } = detectPlatformAndDate(heading);
+    posts.push({
+      platform,
+      date,
+      topic: body.replace(/\n/g, ' ').slice(0, 60),
+      draft: body,
+      status: 'ready',
+    });
+  }
+  return posts;
+}
 
 // Get Monday of the week containing `date`
 function getMonday(date) {
@@ -91,9 +148,30 @@ export default function ContentCalendar() {
   const [showAdd,   setShowAdd]   = useState(false);
   const [editPost,  setEditPost]  = useState(null);
   const [form,      setForm]      = useState(EMPTY);
-  const [expanded,  setExpanded]  = useState({});   // { [postId]: bool }
-  const [drafting,  setDrafting]  = useState({});   // { [postId]: bool }
-  const [draftErr,  setDraftErr]  = useState({});   // { [postId]: str }
+  const [expanded,  setExpanded]  = useState({});
+  const [drafting,  setDrafting]  = useState({});
+  const [draftErr,  setDraftErr]  = useState({});
+  const [importMsg, setImportMsg] = useState('');
+  const fileInputRef = useRef(null);
+
+  function handleImportClick() {
+    if (fileInputRef.current) fileInputRef.current.click();
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target.result;
+      const posts = parseMdFile(text);
+      posts.forEach(p => addContentPost(p));
+      setImportMsg(`Imported ${posts.length} post${posts.length !== 1 ? 's' : ''} into calendar`);
+      setTimeout(() => setImportMsg(''), 4000);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
 
   // 7 dates for this week
   const weekDates = useMemo(() =>
@@ -166,14 +244,21 @@ export default function ContentCalendar() {
       {/* Header */}
       <div className="agency-page-header">
         <div className="agency-page-title">Content Calendar</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={prevWeek}>‹</button>
           <span style={{ fontSize: 13, color: '#475569', minWidth: 160, textAlign: 'center' }}>{weekLabel}</span>
           <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={nextWeek}>›</button>
           <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={goToday}>Today</button>
+          <button className="agency-btn agency-btn-secondary" onClick={handleImportClick}>Import .md</button>
           <button className="agency-btn agency-btn-primary" onClick={() => openAdd('')}>+ Add Post</button>
+          <input ref={fileInputRef} type="file" accept=".md" style={{ display: 'none' }} onChange={handleFileChange} />
         </div>
       </div>
+
+      {/* Import success banner */}
+      {importMsg && (
+        <div className="agency-success-banner" style={{ marginBottom: 14 }}>{importMsg}</div>
+      )}
 
       {/* 7-column week grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, marginBottom: 24, overflowX: 'auto' }}>

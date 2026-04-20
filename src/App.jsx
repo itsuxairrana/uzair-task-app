@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTaskStore } from './store/taskStore';
 import { useAgencyStore } from './store/agencyStore';
-import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleClientId, getStoredGoogleClientId } from './services/googleAuth';
+import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleClientId, getStoredGoogleClientId, attemptSilentRefresh, hadPreviousAuth } from './services/googleAuth';
 import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
 import { getTeam, saveTeam } from './services/gmailApi';
 import { verifyToken, clearAuth, getUser, changePassword, addTeamMember, fetchTeam } from './services/authApi';
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { id: 'overdue',     label: 'Overdue',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 4.5v3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".75" fill="currentColor"/></svg> },
   { id: 'agency_div',  label: 'AGENCY',      type: 'divider' },
   { id: 'platform_checklist', label: 'Daily Platforms', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 8l3.5 3.5L13 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+  { id: 'daily_tasks', label: 'Daily Tasks', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M4.5 7.5l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { id: 'revenue',     label: 'Revenue',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 4v7M5.5 5.5h3a1 1 0 010 2h-2a1 1 0 000 2h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
   { id: 'pipeline',    label: 'Clients',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="3" height="9" rx="1" stroke="currentColor" strokeWidth="1.35"/><rect x="6" y="5" width="3" height="7" rx="1" stroke="currentColor" strokeWidth="1.35"/><rect x="11" y="1" width="3" height="11" rx="1" stroke="currentColor" strokeWidth="1.35"/></svg> },
   { id: 'projects',    label: 'Projects',    icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M4.5 5.5h6M4.5 7.5h6M4.5 9.5h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
@@ -489,7 +490,20 @@ function AppShell({ authUser, onLogout }) {
   };
 
   useEffect(() => {
-    initGoogleAuth();
+    async function initGoogle() {
+      await initGoogleAuth();
+      if (!isSignedIn() && hadPreviousAuth()) {
+        setGoogleLoading(true);
+        const refreshed = await attemptSilentRefresh();
+        if (refreshed) {
+          setGoogleUser(getGoogleUser());
+          setGoogleConnected(true);
+        }
+        setGoogleLoading(false);
+      }
+    }
+    initGoogle();
+
     function onAuthChange() {
       setGoogleUser(getGoogleUser());
       setGoogleConnected(isSignedIn());

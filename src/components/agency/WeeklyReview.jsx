@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
 
 const PLATFORM_IDS = ['fiverr', 'upwork', 'linkedin', 'reddit', 'discord', 'dribbble'];
@@ -52,7 +52,18 @@ export default function WeeklyReview() {
   [viewWeekMonday]);
 
   // ── Notes ──
-  const [note, setNote] = useState(() => getWeeklyNote(currentKey));
+  const [note, setNote] = useState(() => getWeeklyNote(viewWeekKey) || '');
+  const [savedMsg, setSavedMsg] = useState(false);
+
+  useEffect(() => {
+    setNote(getWeeklyNote(viewWeekKey) || '');
+  }, [viewWeekKey]);
+
+  function handleSave(val) {
+    saveWeeklyNote(viewWeekKey, val);
+    setSavedMsg(true);
+    setTimeout(() => setSavedMsg(false), 2000);
+  }
 
   // ── Section 1: Last 7 days activity (the selected week) ──
   const activeDays = viewDates.filter(d => {
@@ -333,9 +344,15 @@ export default function WeeklyReview() {
           placeholder="What's the #1 thing you want to accomplish this week?"
           value={note}
           onChange={e => setNote(e.target.value)}
-          onBlur={() => saveWeeklyNote(viewWeekKey, note)}
+          onBlur={() => handleSave(note)}
         />
-        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Auto-saves on blur</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+          <button
+            className="agency-btn agency-btn-primary agency-btn-sm"
+            onClick={() => handleSave(note)}
+          >Save</button>
+          {savedMsg && <span style={{ fontSize: 12, color: '#16a34a' }}>Saved ✓</span>}
+        </div>
       </div>
 
     </div>

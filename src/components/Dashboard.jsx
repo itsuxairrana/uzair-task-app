@@ -12,6 +12,7 @@ import TeamManager       from './agency/TeamManager';
 import ContentCalendar   from './agency/ContentCalendar';
 import UpworkLog         from './agency/UpworkLog';
 import WeeklyReview      from './agency/WeeklyReview';
+import DailyTasks        from './agency/DailyTasks';
 
 const STATUS_OPTIONS = ['all', 'todo', 'in_progress', 'done'];
 const PRIORITY_OPTIONS = ['all', 'high', 'medium', 'low'];
@@ -63,6 +64,7 @@ export default function Dashboard({ activeNav }) {
   if (activeNav === 'content_calendar') return <ContentCalendar />;
   if (activeNav === 'upwork_log')       return <UpworkLog />;
   if (activeNav === 'weekly_review')   return <WeeklyReview />;
+  if (activeNav === 'daily_tasks')     return <DailyTasks />;
 
   function handleEdit(task) { setEditTask(task); setShowForm(true); }
   function handleAddNew() { setEditTask(null); setShowForm(true); }

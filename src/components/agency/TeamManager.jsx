@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
 
-const ASSIGNEES = ['Junaid', 'Hamza', 'Collaborator'];
 const STATUSES  = ['todo', 'in_progress', 'pending_review', 'done'];
 
 const STATUS_LABEL = {
@@ -18,7 +17,8 @@ const STATUS_COLOR = {
   done:           'agency-badge-green',
 };
 
-const EMPTY = { assignee: 'Junaid', title: '', description: '', deadline: '', notes: '', status: 'todo' };
+const MEMBER_COLORS = ['#f97316','#0057B8','#8b5cf6','#16a34a','#dc2626','#0891b2','#d97706'];
+const EMPTY = { assignee: '', title: '', description: '', deadline: '', notes: '', status: 'todo' };
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
@@ -26,14 +26,31 @@ function daysUntil(dateStr) {
 }
 
 export default function TeamManager() {
-  const { teamTasks, addTeamTask, updateTeamTask, deleteTeamTask, approveTeamTask } = useAgencyStore();
+  const { teamTasks, addTeamTask, updateTeamTask, deleteTeamTask, approveTeamTask,
+          teamMembers, addTeamMember, removeTeamMember } = useAgencyStore();
 
-  const [showAdd,  setShowAdd]  = useState(false);
-  const [editTask, setEditTask] = useState(null);
-  const [form,     setForm]     = useState(EMPTY);
+  const [showAdd,       setShowAdd]       = useState(false);
+  const [editTask,      setEditTask]      = useState(null);
+  const [form,          setForm]          = useState({ ...EMPTY, assignee: teamMembers[0] || '' });
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [newMemberName, setNewMemberName] = useState('');
 
-  function openAdd()   { setForm(EMPTY); setEditTask(null); setShowAdd(true); }
+  function openAdd()   { setForm({ ...EMPTY, assignee: teamMembers[0] || '' }); setEditTask(null); setShowAdd(true); }
   function openEdit(t) { setForm({ assignee: t.assignee, title: t.title, description: t.description || '', deadline: t.deadline || '', notes: t.notes || '', status: t.status }); setEditTask(t); setShowAdd(true); }
+
+  function handleAddMember(e) {
+    e.preventDefault();
+    if (newMemberName.trim()) {
+      addTeamMember(newMemberName.trim());
+      setNewMemberName('');
+      setShowAddMember(false);
+    }
+  }
+
+  function handleRemoveMember(name) {
+    const ok = removeTeamMember(name);
+    if (!ok) alert(`${name} has active tasks — complete or delete them first.`);
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -69,13 +86,17 @@ export default function TeamManager() {
             <span className="agency-badge agency-badge-orange">{totalPending} pending</span>
           )}
         </div>
-        <button className="agency-btn agency-btn-primary" onClick={openAdd}>+ Add Task</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="agency-btn agency-btn-secondary" onClick={() => setShowAddMember(true)}>+ Add Member</button>
+          <button className="agency-btn agency-btn-primary" onClick={openAdd}>+ Add Task</button>
+        </div>
       </div>
 
-      {/* 3 sections — one per assignee */}
-      {ASSIGNEES.map(person => {
+      {/* Sections — one per member */}
+      {teamMembers.map((person, idx) => {
         const tasks = teamTasks.filter(t => t.assignee === person);
         const pending = pendingCount(person);
+        const color = MEMBER_COLORS[idx % MEMBER_COLORS.length];
 
         return (
           <div key={person} style={{ marginBottom: 24 }}>
@@ -84,7 +105,7 @@ export default function TeamManager() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <div style={{
                 width: 32, height: 32, borderRadius: '50%',
-                background: person === 'Junaid' ? '#f97316' : person === 'Hamza' ? '#0057B8' : '#8b5cf6',
+                background: color,
                 color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontWeight: 700, fontSize: 13, flexShrink: 0,
               }}>
@@ -96,6 +117,11 @@ export default function TeamManager() {
                   {pending} pending
                 </span>
               )}
+              <button
+                onClick={() => handleRemoveMember(person)}
+                title={`Remove ${person}`}
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', fontSize: 13, padding: '2px 6px' }}
+              >✕</button>
             </div>
 
             {/* Task cards */}
@@ -181,6 +207,32 @@ export default function TeamManager() {
         </div>
       )}
 
+      {/* Add Member modal */}
+      {showAddMember && (
+        <div className="agency-modal-overlay" onClick={e => e.target === e.currentTarget && setShowAddMember(false)}>
+          <div className="agency-modal" style={{ maxWidth: 360 }}>
+            <div className="agency-modal-title">Add Team Member</div>
+            <form onSubmit={handleAddMember}>
+              <div className="agency-form-row">
+                <label className="agency-form-label">Member Name</label>
+                <input
+                  className="agency-form-input"
+                  required
+                  autoFocus
+                  value={newMemberName}
+                  onChange={e => setNewMemberName(e.target.value)}
+                  placeholder="e.g. Ahmed"
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                <button type="button" className="agency-btn agency-btn-secondary" onClick={() => setShowAddMember(false)}>Cancel</button>
+                <button type="submit" className="agency-btn agency-btn-primary">Add</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Add / Edit modal */}
       {showAdd && (
         <div className="agency-modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
@@ -192,7 +244,7 @@ export default function TeamManager() {
                 <div className="agency-form-row" style={{ margin: 0 }}>
                   <label className="agency-form-label">Assign To</label>
                   <select className="agency-form-select" value={form.assignee} onChange={e => setForm(f => ({ ...f, assignee: e.target.value }))}>
-                    {ASSIGNEES.map(a => <option key={a}>{a}</option>)}
+                    {teamMembers.map(a => <option key={a}>{a}</option>)}
                   </select>
                 </div>
 
