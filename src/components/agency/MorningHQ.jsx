@@ -46,20 +46,6 @@ export default function MorningHQ() {
   const [editingPlatform,  setEditingPlatform]  = useState(null);
   const [platformForm,     setPlatformForm]     = useState(EMPTY_PLATFORM);
 
-  const todayDOW   = now.getDay();
-  const todayTheme = DAILY_THEME[todayDOW];
-  const themeKey   = THEME_CHECKS_PREFIX + todayStr;
-  const [themeChecks, setThemeChecks] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(themeKey)) || {}; } catch { return {}; }
-  });
-  function toggleThemeCheck(idx) {
-    const updated = { ...themeChecks, [idx]: !themeChecks[idx] };
-    setThemeChecks(updated);
-    localStorage.setItem(themeKey, JSON.stringify(updated));
-  }
-  const themeDone  = todayTheme.tasks.filter((_, i) => themeChecks[i]).length;
-  const themeTotal = todayTheme.tasks.length;
-
   function openAddPlatform() { setPlatformForm({ ...EMPTY_PLATFORM }); setEditingPlatform(null); }
   function openEditPlatform(p) { setPlatformForm({ id: p.id, name: p.name, color: p.color, tasks: p.tasks }); setEditingPlatform(p); }
   function handlePlatformSubmit(e) {
@@ -83,6 +69,19 @@ export default function MorningHQ() {
   }, []);
 
   const todayStr = now.toISOString().split('T')[0];
+  const todayDOW   = now.getDay();
+  const todayTheme = DAILY_THEME[todayDOW];
+  const themeKey   = THEME_CHECKS_PREFIX + todayStr;
+  const [themeChecks, setThemeChecks] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(themeKey)) || {}; } catch { return {}; }
+  });
+  function toggleThemeCheck(idx) {
+    const updated = { ...themeChecks, [idx]: !themeChecks[idx] };
+    setThemeChecks(updated);
+    localStorage.setItem(themeKey, JSON.stringify(updated));
+  }
+  const themeDone  = todayTheme.tasks.filter((_, i) => themeChecks[i]).length;
+  const themeTotal = todayTheme.tasks.length;
   const todayChecks = getTodayChecks();
   const streak = computeStreak();
 
