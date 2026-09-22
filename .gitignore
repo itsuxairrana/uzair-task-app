@@ -15,6 +15,9 @@ dist-ssr
 .env.*
 !.env.example
 public/api/config.php
+.wrangler
+.dev.vars
+worker.generated.sql
 
 # Editor directories and files
 .vscode/*
