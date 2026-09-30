@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
+import { localISO } from '../../utils/date';
 
-const SOURCES = ['fiverr','upwork','contra','direct','voice_agent','templates','affiliates'];
+const SOURCES = ['fiverr','contra','direct','voice_agent','templates','affiliates'];
 const LEAD_SOURCES = [
   { id: 'company',         label: 'Company (0%)' },
   { id: 'junaid_direct',   label: 'Junaid Direct (30%)' },
@@ -10,14 +11,14 @@ const LEAD_SOURCES = [
 ];
 const CURRENCIES = ['PKR','USD','GBP'];
 
-const EMPTY_ENTRY = { amount: '', currency: 'USD', source: 'fiverr', lead_source: 'company', client_name: '', direct_cost: '', date: new Date().toISOString().split('T')[0], notes: '' };
-const EMPTY_INV   = { client_name: '', amount: '', currency: 'USD', delivered_date: new Date().toISOString().split('T')[0], due_date: '', notes: '' };
+const EMPTY_ENTRY = { amount: '', currency: 'USD', source: 'fiverr', lead_source: 'company', client_name: '', direct_cost: '', date: localISO(), notes: '' };
+const EMPTY_INV   = { client_name: '', amount: '', currency: 'USD', delivered_date: localISO(), due_date: '', notes: '' };
 
 function pkrFmt(n) { return 'PKR ' + Math.round(n).toLocaleString(); }
 
 export default function RevenueDashboard() {
   const {
-    revenueEntries, revenueSettings, invoices,
+    revenueSettings,
     addRevenue, deleteRevenue, updateRevenueSettings,
     toPKR, getThisMonthEntries, getThisMonthTotalPKR, getJunaidCommissionThisMonth,
     addInvoice, markInvoicePaid, deleteInvoice, getUnpaidInvoices, getOverdueInvoices,
@@ -30,7 +31,7 @@ export default function RevenueDashboard() {
   const [settings, setSettings]           = useState(revenueSettings);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
-  const today        = new Date().toISOString().split('T')[0];
+  const today        = localISO();
   const monthEntries = getThisMonthEntries();
   const totalPKR     = getThisMonthTotalPKR();
   const target       = revenueSettings.monthlyTarget;
@@ -46,7 +47,8 @@ export default function RevenueDashboard() {
   const pkrDirect= monthEntries.filter(e => e.currency === 'PKR').reduce((s,e) => s + Number(e.amount||0), 0);
 
   // By-source totals for bar chart
-  const bySource = SOURCES.map(s => ({
+  // Include sources only found on older entries so they still count.
+  const bySource = [...new Set([...SOURCES, ...monthEntries.map(e => e.source).filter(Boolean)])].map(s => ({
     s,
     total: monthEntries.filter(e => e.source === s).reduce((sum,e) => sum + toPKR(Number(e.amount||0), e.currency), 0),
   })).filter(x => x.total > 0).sort((a,b) => b.total - a.total);
@@ -67,7 +69,7 @@ export default function RevenueDashboard() {
 
   function handleAddInv(e) {
     e.preventDefault();
-    const due = inv.due_date || (() => { const d = new Date(inv.delivered_date); d.setDate(d.getDate()+7); return d.toISOString().split('T')[0]; })();
+    const due = inv.due_date || (() => { const d = new Date(inv.delivered_date); d.setDate(d.getDate()+7); return localISO(d); })();
     addInvoice({ ...inv, due_date: due });
     setInv(EMPTY_INV);
     setShowInvModal(false);
@@ -94,7 +96,7 @@ export default function RevenueDashboard() {
             { label: 'USD → PKR rate', key: 'usdRate' },
             { label: 'GBP → PKR rate', key: 'gbpRate' },
           ].map(f => (
-            <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569', minWidth: 140 }}>
+            <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--text-2)', minWidth: 140 }}>
               {f.label}
               <input
                 className="agency-form-input"
@@ -126,11 +128,11 @@ export default function RevenueDashboard() {
           <div className="agency-stat-label">Target</div>
         </div>
         <div className="agency-stat-card">
-          <div className="agency-stat-number" style={{ color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{pkrFmt(remaining)}</div>
+          <div className="agency-stat-number" style={{ color: remaining > 0 ? 'var(--red)' : 'var(--green)' }}>{pkrFmt(remaining)}</div>
           <div className="agency-stat-label">Remaining</div>
         </div>
         <div className="agency-stat-card">
-          <div className="agency-stat-number" style={{ color: pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444' }}>{pct}%</div>
+          <div className="agency-stat-number" style={{ color: pct >= 100 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--red)' }}>{pct}%</div>
           <div className="agency-stat-label">Complete</div>
         </div>
       </div>
@@ -140,14 +142,14 @@ export default function RevenueDashboard() {
         <div className="agency-progress-wrap" style={{ height: 12, marginBottom: 10 }}>
           <div className={'agency-progress-fill' + (pct >= 100 ? ' complete' : '')} style={{ width: pct + '%' }} />
         </div>
-        <div style={{ fontSize: 12, color: '#64748b' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
           {usdTotal > 0 && <span>${usdTotal.toLocaleString()} USD</span>}
           {usdTotal > 0 && (gbpTotal > 0 || pkrDirect > 0) && <span style={{ margin: '0 6px' }}>+</span>}
           {gbpTotal > 0 && <span>£{gbpTotal.toLocaleString()} GBP</span>}
           {gbpTotal > 0 && pkrDirect > 0 && <span style={{ margin: '0 6px' }}>+</span>}
           {pkrDirect > 0 && <span>PKR {pkrDirect.toLocaleString()}</span>}
-          {(usdTotal > 0 || gbpTotal > 0) && <span style={{ margin: '0 6px', color: '#94a3b8' }}>= ~{pkrFmt(totalPKR)}</span>}
-          {monthEntries.length === 0 && <span style={{ color: '#94a3b8' }}>No income logged this month</span>}
+          {(usdTotal > 0 || gbpTotal > 0) && <span style={{ margin: '0 6px', color: 'var(--text-3)' }}>= ~{pkrFmt(totalPKR)}</span>}
+          {monthEntries.length === 0 && <span style={{ color: 'var(--text-3)' }}>No income logged this month</span>}
         </div>
       </div>
 
@@ -166,7 +168,7 @@ export default function RevenueDashboard() {
       {/* Outstanding Payments / Invoices */}
       <div className="agency-card" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>Outstanding Payments</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Outstanding Payments</span>
           <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={() => setShowInvModal(true)}>+ Add Invoice</button>
         </div>
 
@@ -177,7 +179,7 @@ export default function RevenueDashboard() {
         )}
 
         {unpaid.length === 0 ? (
-          <div style={{ fontSize: 13, color: '#94a3b8' }}>No outstanding invoices</div>
+          <div style={{ fontSize: 13, color: 'var(--text-3)' }}>No outstanding invoices</div>
         ) : (
           <table className="agency-table">
             <thead>
@@ -193,7 +195,7 @@ export default function RevenueDashboard() {
                     <td>{inv.amount} {inv.currency}</td>
                     <td>{inv.delivered_date || '—'}</td>
                     <td>{inv.due_date || '—'}</td>
-                    <td>{od ? <span className="agency-badge agency-badge-red">{days}d</span> : <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                    <td>{od ? <span className="agency-badge agency-badge-red">{days}d</span> : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                     <td style={{ display: 'flex', gap: 6 }}>
                       <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={() => markInvoicePaid(inv.id)}>✓ Paid</button>
                       <button className="agency-btn agency-btn-danger agency-btn-sm" onClick={() => deleteInvoice(inv.id)}>✕</button>
@@ -213,11 +215,11 @@ export default function RevenueDashboard() {
           {bySource.map(({ s, total }) => (
             <div key={s} style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontSize: 12 }}>
-                <span style={{ color: '#475569', textTransform: 'capitalize' }}>{s.replace('_',' ')}</span>
-                <span style={{ color: '#64748b' }}>{pkrFmt(total)}</span>
+                <span style={{ color: 'var(--text-2)', textTransform: 'capitalize' }}>{s.replace('_',' ')}</span>
+                <span style={{ color: 'var(--text-2)' }}>{pkrFmt(total)}</span>
               </div>
-              <div style={{ background: '#f1f5f9', borderRadius: 99, height: 6, overflow: 'hidden' }}>
-                <div style={{ height: '100%', borderRadius: 99, background: '#0057B8', width: Math.round((total / maxSource) * 100) + '%', transition: 'width .3s' }} />
+              <div style={{ background: 'var(--surface-2)', borderRadius: 99, height: 6, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 99, background: 'var(--accent)', width: Math.round((total / maxSource) * 100) + '%', transition: 'width .3s' }} />
               </div>
             </div>
           ))}
@@ -243,7 +245,7 @@ export default function RevenueDashboard() {
                     <td style={{ textTransform: 'capitalize' }}>{e.source?.replace('_',' ')}</td>
                     <td>{e.amount} {e.currency}</td>
                     <td>{pkrFmt(pkr)}</td>
-                    <td>{rateMap[e.lead_source] ? <span className="agency-badge agency-badge-orange">{rateMap[e.lead_source]}</span> : <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                    <td>{rateMap[e.lead_source] ? <span className="agency-badge agency-badge-orange">{rateMap[e.lead_source]}</span> : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                     <td><button className="agency-btn agency-btn-danger agency-btn-sm" onClick={() => deleteRevenue(e.id)}>✕</button></td>
                   </tr>
                 );

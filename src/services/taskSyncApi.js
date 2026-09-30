@@ -6,29 +6,34 @@ function headers() {
   return { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
 }
 
-/** Admin: push a task to the DB (called when task is assigned to an employee) */
+/** Admin: push a task to the DB so the assigned employee sees it. Returns false if the request failed. */
 export async function syncTask(task) {
   try {
-    await fetch(`${API}/db_tasks.php`, {
+    const res = await fetch(`${API}/db_tasks.php`, {
       method: 'POST', headers: headers(), body: JSON.stringify(task),
     });
-  } catch {}
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** Admin: delete task from DB */
 export async function deleteTaskFromDB(id) {
   try {
     await fetch(`${API}/db_tasks.php?id=${id}`, { method: 'DELETE', headers: headers() });
-  } catch {}
+  } catch { /* offline — nothing to clean up on the server yet */ }
 }
 
-/** Employee: fetch own tasks */
-export async function fetchMyTasks() {
+/** Tasks stored on the server: an employee gets their own, the admin gets every assigned task (with assignee_name). */
+export async function fetchDbTasks() {
   const res  = await fetch(`${API}/db_tasks.php`, { headers: headers() });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error);
   return data.tasks;
 }
+
+export const fetchMyTasks = fetchDbTasks;
 
 /** Employee: update task status */
 export async function updateTaskStatus(id, status) {

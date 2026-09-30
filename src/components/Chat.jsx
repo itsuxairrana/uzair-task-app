@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { sendToModel, MODELS, isModelAvailable } from '../services/aiRouter';
 import { parseMdToTasks } from '../services/mdParser';
+import Icon from './Icon';
 
 const CHAT_STORAGE_KEY = 'uzair_chat_history';
 const LAST_MODEL_KEY   = 'uzair_last_model';
@@ -9,15 +10,15 @@ const SUGGESTIONS = [
   { text: 'Plan my week for Uzair Visuals', label: 'Weekly plan' },
   { text: 'Create 3 shirt designs for Ahmed — concepts, revisions, delivery', label: 'Design project' },
   { text: 'Post 3 reels this week for Uzair Visuals Instagram', label: 'Social media' },
-  { text: 'Update Upwork profile — headline, skills, portfolio, rate', label: 'Upwork update' },
+  { text: 'Follow up with 3 warm leads this week — LinkedIn DM, email, and a proposal', label: 'Lead follow-ups' },
 ];
 
 const MODEL_COLOR = {
-  free: '#16a34a', gemini: '#4285f4', haiku: '#7c6af7',
+  free: 'var(--green)', gemini: '#4285f4', haiku: '#7c6af7',
   claude: '#7c6af7', gpt4: '#19c37d', grok: '#1d9bf0',
 };
 
-export default function Chat({ onTasksParsed }) {
+export default function Chat({ onTasksParsed, onCollapse }) {
   // Always permanent — chat persists until explicitly cleared
   const [messages, setMessages] = useState(() => {
     try { return JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || '[]'); }
@@ -117,10 +118,7 @@ export default function Chat({ onTasksParsed }) {
   }
 
   async function handleCopy(rawContent, idx) {
-    const plain = rawContent
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    const plain = String(rawContent);
     try { await navigator.clipboard.writeText(plain); }
     catch {
       const ta = document.createElement('textarea');
@@ -164,8 +162,10 @@ export default function Chat({ onTasksParsed }) {
     localStorage.removeItem(CHAT_STORAGE_KEY);
   }
 
+  // Escape first: messages contain user and model text, which must never become live HTML.
   function renderContent(text) {
-    return text
+    return String(text)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/`(.+?)`/g, '<code>$1</code>')
       .replace(/\n/g, '<br/>');
@@ -180,15 +180,21 @@ export default function Chat({ onTasksParsed }) {
       {/* ── Header ── */}
       <div className="chat-header">
         <div className="chat-header-left">
-          <span className="chat-title">AI Assistant</span>
+          <Icon name="sparkles" size={16} className="text-accent" />
+          <span className="chat-title">AI assistant</span>
+        </div>
+        <div className="chat-header-right">
           {!showWelcome && (
-            <button className="chat-new-btn" onClick={clearChat}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-              New chat
+            <button className="btn btn-ghost btn-sm" onClick={clearChat} title="Start a new chat">
+              <Icon name="plus" size={14} /> New
+            </button>
+          )}
+          {onCollapse && (
+            <button className="btn btn-ghost btn-icon btn-sm" onClick={onCollapse} title="Collapse (Ctrl+J)" aria-label="Collapse AI assistant">
+              <Icon name="chevronsRight" size={16} />
             </button>
           )}
         </div>
-        <div className="chat-header-right" />
       </div>
 
       {/* ── Messages ── */}
@@ -196,14 +202,9 @@ export default function Chat({ onTasksParsed }) {
 
         {showWelcome && (
           <div className="chat-welcome">
-            <div className="welcome-mark">
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                <rect width="32" height="32" rx="9" fill="var(--blue)"/>
-                <path d="M9 16h14M16 9v14" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <h3 className="welcome-title">Uzair Task OS</h3>
-            <p className="welcome-sub">Describe any work — I'll turn it into structured tasks.</p>
+            <div className="welcome-mark"><Icon name="sparkles" size={20} /></div>
+            <h3 className="welcome-title">What are you working on?</h3>
+            <p className="welcome-sub">Describe any work and I'll turn it into tasks with steps. You can also attach a Markdown checklist.</p>
             {model !== 'free' && !isModelAvailable(model) && (
               <div className="welcome-key-warning">
                 {activeModel?.label} needs an API key — open Settings to add it.
@@ -234,7 +235,7 @@ export default function Chat({ onTasksParsed }) {
                 <div className="cb-actions">
                   <button
                     className={'cb-action-btn' + (copied === i ? ' cb-copied' : '')}
-                    onClick={() => handleCopy(renderContent(msg.content), i)}
+                    onClick={() => handleCopy(msg.content, i)}
                   >
                     {copied === i
                       ? <><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l2.5 2.5 5.5-5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg> Copied</>

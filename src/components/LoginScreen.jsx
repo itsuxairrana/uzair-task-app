@@ -25,13 +25,9 @@ export default function LoginScreen({ onLogin }) {
     <div className="login-bg">
       <div className="login-card">
         {/* Logo */}
-        <div className="login-logo">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-          </svg>
-        </div>
-        <h1 className="login-title">Uzair Task OS</h1>
-        <p className="login-sub">Sign in to your workspace</p>
+        <div className="login-logo"><span className="brand-mark">UV</span></div>
+        <h1 className="login-title">Task OS</h1>
+        <p className="login-sub">Sign in to your Uzair Visuals workspace</p>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="login-field">
@@ -78,11 +74,11 @@ export default function LoginScreen({ onLogin }) {
           <button type="submit" className="login-btn" disabled={loading}>
             {loading ? (
               <span className="login-spinner"/>
-            ) : 'Sign In'}
+            ) : 'Sign in'}
           </button>
         </form>
 
-        <p className="login-footer">Uzair Visuals · Task Management</p>
+        <p className="login-footer">Uzair Visuals · Task OS</p>
       </div>
     </div>
   );

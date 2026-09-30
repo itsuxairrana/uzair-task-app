@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { deleteTaskFromDB } from '../services/taskSyncApi';
+import { deleteTaskFromDB, syncTask } from '../services/taskSyncApi';
+import { getTeam } from '../services/gmailApi';
 
 const LS_KEY = 'uzair_task_os_tasks';
 
@@ -14,6 +15,17 @@ function loadFromStorage() {
 
 function saveToStorage(tasks) {
   localStorage.setItem(LS_KEY, JSON.stringify(tasks));
+}
+
+// Employees (from the server's user list, mirrored in localStorage by App).
+export function isEmployee(name) {
+  return !!name && getTeam().some(m => m.name === name);
+}
+
+// Keep the server copy in step with the local one: employees only see tasks that live on the server.
+function syncAssignment(before, after) {
+  if (after && isEmployee(after.assigned_to)) syncTask(after);
+  else if (before && isEmployee(before.assigned_to)) deleteTaskFromDB(before.id).catch(() => {});
 }
 
 export const useTaskStore = create((set, get) => ({
@@ -54,6 +66,7 @@ export const useTaskStore = create((set, get) => ({
       saveToStorage(tasks);
       return { tasks };
     });
+    syncAssignment(null, newTask);
     return newTask;
   },
 
@@ -63,14 +76,18 @@ export const useTaskStore = create((set, get) => ({
       saveToStorage(tasks);
       return { tasks };
     });
+    taskArray.forEach(t => syncAssignment(null, t));
   },
 
-  updateTask(id, updates) {
+  // `fromServer` = the change came from the server (employee update), so don't echo it back.
+  updateTask(id, updates, { fromServer = false } = {}) {
+    const before = get().tasks.find(t => t.id === id);
     set(state => {
       const tasks = state.tasks.map(t => t.id === id ? { ...t, ...updates } : t);
       saveToStorage(tasks);
       return { tasks };
     });
+    if (!fromServer) syncAssignment(before, get().tasks.find(t => t.id === id));
   },
 
   deleteTask(id) {
@@ -102,12 +119,32 @@ export const useTaskStore = create((set, get) => ({
       saveToStorage(tasks);
       return { tasks };
     });
+    syncAssignment(null, get().tasks.find(t => t.id === taskId));
   },
 
   // ── Google sync ─────────────────────────────────────────────────────────────
 
   setGoogleIds(id, { google_calendar_event_id, google_task_id }) {
-    get().updateTask(id, { google_calendar_event_id, google_task_id });
+    get().updateTask(id, { google_calendar_event_id, google_task_id }, { fromServer: true });
+  },
+
+  // Apply status/milestone changes employees made on the server to the local copies.
+  applyServerTasks(serverTasks) {
+    const byId = new Map(serverTasks.map(t => [t.id, t]));
+    let changed = false;
+    const tasks = get().tasks.map(t => {
+      const s = byId.get(t.id);
+      if (!s) return t;
+      const milestones = (t.milestones || []).map(m => {
+        const sm = (s.milestones || []).find(x => x.id === m.id);
+        return sm && !!sm.done !== !!m.done ? { ...m, done: !!sm.done } : m;
+      });
+      const msChanged = milestones.some((m, i) => m !== (t.milestones || [])[i]);
+      if (s.status === t.status && !msChanged) return t;
+      changed = true;
+      return { ...t, status: s.status, milestones };
+    });
+    if (changed) { saveToStorage(tasks); set({ tasks }); }
   },
 
   // ── Pending tasks (AI confirm screen) ───────────────────────────────────────

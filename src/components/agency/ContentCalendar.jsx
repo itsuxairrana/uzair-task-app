@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
 import { getStoredKey } from '../../services/aiRouter';
+import { localISO } from '../../utils/date';
 
 const PLATFORMS  = ['linkedin', 'reddit', 'dribbble', 'blog', 'pinterest'];
 const POST_TYPES = ['video_process', 'brand_reveal', 'tool_tutorial', 'for_hire', 'helpful_answer', 'portfolio_post', 'blog_post', 'pin'];
@@ -99,7 +100,7 @@ function addDays(date, n) {
 }
 
 function toISO(date) {
-  return date.toISOString().split('T')[0];
+  return localISO(date);
 }
 
 function getLastNDays(n) {
@@ -246,7 +247,7 @@ export default function ContentCalendar() {
         <div className="agency-page-title">Content Calendar</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={prevWeek}>‹</button>
-          <span style={{ fontSize: 13, color: '#475569', minWidth: 160, textAlign: 'center' }}>{weekLabel}</span>
+          <span style={{ fontSize: 13, color: 'var(--text-2)', minWidth: 160, textAlign: 'center' }}>{weekLabel}</span>
           <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={nextWeek}>›</button>
           <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={goToday}>Today</button>
           <button className="agency-btn agency-btn-secondary" onClick={handleImportClick}>Import .md</button>
@@ -274,8 +275,8 @@ export default function ContentCalendar() {
               <div style={{
                 textAlign: 'center', padding: '6px 4px', marginBottom: 6,
                 borderRadius: 6,
-                background: isToday ? '#0057B8' : '#f8fafc',
-                color: isToday ? '#fff' : '#475569',
+                background: isToday ? 'var(--accent)' : 'var(--surface-2)',
+                color: isToday ? 'var(--on-accent)' : 'var(--text-2)',
                 fontWeight: isToday ? 700 : 500,
                 fontSize: 12,
               }}>
@@ -291,15 +292,15 @@ export default function ContentCalendar() {
 
                 return (
                   <div key={post.id} style={{
-                    background: '#fff', border: '1px solid #e2e8f0', borderRadius: 7,
-                    borderLeft: `3px solid ${PLATFORM_COLOR[post.platform] || '#94a3b8'}`,
+                    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7,
+                    borderLeft: `3px solid ${PLATFORM_COLOR[post.platform] || 'var(--text-3)'}`,
                     padding: '8px 10px', marginBottom: 6, fontSize: 12,
                   }}>
                     {/* Top row */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 4 }}>
                       <span style={{
                         fontSize: 10, fontWeight: 700, textTransform: 'capitalize',
-                        color: PLATFORM_COLOR[post.platform] || '#64748b',
+                        color: PLATFORM_COLOR[post.platform] || 'var(--text-2)',
                       }}>
                         {post.platform}
                       </span>
@@ -309,8 +310,8 @@ export default function ContentCalendar() {
                     </div>
 
                     {/* Topic */}
-                    <div style={{ color: '#334155', fontSize: 12, marginBottom: 5, lineHeight: 1.3 }}>
-                      {post.topic || <span style={{ color: '#94a3b8' }}>No topic</span>}
+                    <div style={{ color: 'var(--text)', fontSize: 12, marginBottom: 5, lineHeight: 1.3 }}>
+                      {post.topic || <span style={{ color: 'var(--text-3)' }}>No topic</span>}
                     </div>
 
                     {/* Action buttons */}
@@ -350,13 +351,13 @@ export default function ContentCalendar() {
                     </div>
 
                     {/* Draft error */}
-                    {err && <div style={{ fontSize: 10, color: '#b91c1c', marginTop: 4 }}>{err}</div>}
+                    {err && <div style={{ fontSize: 10, color: 'var(--red)', marginTop: 4 }}>{err}</div>}
 
                     {/* Expanded draft */}
                     {isExp && (
-                      <div style={{ marginTop: 8, borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>
+                      <div style={{ marginTop: 8, borderTop: '1px solid var(--surface-2)', paddingTop: 8 }}>
                         <textarea
-                          style={{ width: '100%', fontSize: 11, border: '1px solid #e2e8f0', borderRadius: 5, padding: 6, resize: 'vertical', fontFamily: 'inherit', color: '#334155', minHeight: 80, boxSizing: 'border-box' }}
+                          style={{ width: '100%', fontSize: 11, border: '1px solid var(--border)', borderRadius: 5, padding: 6, resize: 'vertical', fontFamily: 'inherit', color: 'var(--text)', minHeight: 80, boxSizing: 'border-box' }}
                           value={post.draft || ''}
                           placeholder="Draft copy will appear here…"
                           onChange={e => updateContentPost(post.id, { draft: e.target.value })}
@@ -391,8 +392,8 @@ export default function ContentCalendar() {
               <button
                 onClick={() => openAdd(dateStr)}
                 style={{
-                  width: '100%', border: '1px dashed #cbd5e1', borderRadius: 6,
-                  background: 'transparent', color: '#94a3b8', fontSize: 11,
+                  width: '100%', border: '1px dashed var(--border-strong)', borderRadius: 6,
+                  background: 'transparent', color: 'var(--text-3)', fontSize: 11,
                   padding: '5px 0', cursor: 'pointer',
                 }}
               >
@@ -415,7 +416,7 @@ export default function ContentCalendar() {
             const hasPlanned = posts.length > 0;
             const isToday    = dateStr === today;
 
-            const bg = hasPosted ? '#22c55e' : hasReady ? '#f59e0b' : hasDrafted ? '#0057B8' : hasPlanned ? '#cbd5e1' : '#f1f5f9';
+            const bg = hasPosted ? 'var(--green)' : hasReady ? 'var(--amber)' : hasDrafted ? 'var(--accent)' : hasPlanned ? 'var(--border-strong)' : 'var(--surface-2)';
 
             return (
               <div
@@ -423,7 +424,7 @@ export default function ContentCalendar() {
                 className="agency-heatmap-day"
                 style={{
                   background: bg,
-                  outline: isToday ? '2px solid #0057B8' : 'none',
+                  outline: isToday ? '2px solid var(--accent)' : 'none',
                   outlineOffset: 1,
                   cursor: 'default',
                 }}
@@ -432,11 +433,11 @@ export default function ContentCalendar() {
             );
           })}
         </div>
-        <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: 11, color: '#94a3b8', flexWrap: 'wrap' }}>
-          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#22c55e', marginRight:4, verticalAlign:'middle' }} />Posted</span>
-          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#f59e0b', marginRight:4, verticalAlign:'middle' }} />Ready</span>
-          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#0057B8', marginRight:4, verticalAlign:'middle' }} />Drafted</span>
-          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#cbd5e1', marginRight:4, verticalAlign:'middle' }} />Planned</span>
+        <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: 11, color: 'var(--text-3)', flexWrap: 'wrap' }}>
+          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'var(--green)', marginRight:4, verticalAlign:'middle' }} />Posted</span>
+          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'var(--amber)', marginRight:4, verticalAlign:'middle' }} />Ready</span>
+          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'var(--accent)', marginRight:4, verticalAlign:'middle' }} />Drafted</span>
+          <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'var(--border-strong)', marginRight:4, verticalAlign:'middle' }} />Planned</span>
         </div>
       </div>
 

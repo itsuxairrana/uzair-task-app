@@ -70,8 +70,8 @@ export default function ConfirmScreen({ onDone }) {
     <div className="modal-overlay">
       <div className="modal confirm-modal">
         <div className="modal-header">
-          <h2>Review AI Tasks</h2>
-          <span className="modal-subtitle">{pendingTasks.length} task(s) parsed from Claude</span>
+          <h2>Review tasks</h2>
+          <span className="modal-subtitle">{pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''} found — edit anything before saving</span>
         </div>
 
         <div className="confirm-toolbar">
@@ -81,7 +81,7 @@ export default function ConfirmScreen({ onDone }) {
               checked={selected.size === pendingTasks.length}
               onChange={toggleAll}
             />
-            Select All
+            Select all
           </label>
           <span className="selected-count">{selected.size} selected</span>
         </div>
@@ -151,13 +151,13 @@ export default function ConfirmScreen({ onDone }) {
         {syncStatus && <div className="sync-status">{syncStatus}</div>}
 
         <div className="confirm-actions">
-          <button className="btn-secondary" onClick={handleDiscard}>Discard All</button>
+          <button className="btn btn-secondary" onClick={handleDiscard}>Discard all</button>
           <button
-            className="btn-primary"
+            className="btn btn-primary"
             onClick={handleSaveAll}
             disabled={selected.size === 0 || syncing}
           >
-            {syncing ? 'Saving…' : `Save ${selected.size} Task(s)`}
+            {syncing ? 'Saving…' : `Save ${selected.size} task${selected.size !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>

@@ -1,14 +1,32 @@
 import { useState, useEffect } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
 import { useTaskStore } from '../../store/taskStore';
+import { useUiStore } from '../../store/uiStore';
+import { useTeamStore } from '../../store/teamStore';
+import Icon from '../Icon';
 
-const EMPTY_PLATFORM = { id: '', name: '', color: '#0057B8', tasks: '' };
+function CardHead({ title, sub, to, label = 'View all', right }) {
+  const navigate = useUiStore(s => s.navigate);
+  return (
+    <div className="card-head">
+      <div>
+        <div className="card-title">{title}</div>
+        {sub && <div className="card-sub">{sub}</div>}
+      </div>
+      {right}
+      {to && <button className="link-btn" onClick={() => navigate(to)}>{label} <Icon name="arrowRight" size={13} /></button>}
+    </div>
+  );
+}
+import { localISO, addDaysISO } from '../../utils/date';
+
+const EMPTY_PLATFORM = { id: '', name: '', color: '#0e76b3', tasks: '' };
 
 const DAILY_THEME = {
   1: { label: 'Outreach day',          sub: 'Reddit + Discord + LinkedIn connections + Behance',      tasks: ['Post [FOR HIRE] on Reddit','Message in Discord server','Send 10 LinkedIn connections','Update Behance case study'] },
   2: { label: 'Content day',           sub: 'LinkedIn post #1 + Instagram + client work',             tasks: ['Publish LinkedIn post #1','Post Instagram Story','Work on active client project','Reply to all DMs & comments'] },
   3: { label: 'Portfolio + Discovery', sub: 'Dribbble + research + Discord',                          tasks: ['Post/comment on Dribbble','Research 3 prospects','Post in Discord community','Review analytics'] },
-  4: { label: 'Content + Learning',    sub: 'LinkedIn post #2 + 90 min learning block',               tasks: ['Publish LinkedIn post #2','90 min learning block','Follow up on proposals','Check Upwork messages'] },
+  4: { label: 'Content + Learning',    sub: 'LinkedIn post #2 + 90 min learning block',               tasks: ['Publish LinkedIn post #2','90 min learning block','Follow up on proposals','Reply to inbound leads & DMs'] },
   5: { label: 'Publishing day',        sub: 'LinkedIn post #3 + Blog post + Pinterest',               tasks: ['Publish LinkedIn post #3','Publish blog post','Post 3 Pinterest pins','Weekly invoice check'] },
   6: { label: 'Deep work',             sub: 'Client delivery only, no social',                        tasks: ['Deliver client work','No social media','Review project feedback','Plan next week\'s content'] },
   0: { label: 'Planning day',          sub: 'Cowork workers + Weekly Review + load calendar',         tasks: ['Brief Cowork workers','Complete Weekly Review','Load content calendar','Set top 3 goals for Monday'] },
@@ -31,13 +49,13 @@ function fmtTime(d) {
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
-const PRI_COLOR = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' };
+const PRI_COLOR = { high: 'var(--red)', medium: 'var(--amber)', low: 'var(--green)' };
 
 export default function MorningHQ() {
   const {
     getTodayChecks, togglePlatformCheck, computeStreak,
-    projects, getProposalsNeedingFollowUp, getProposalsNeedingUpworkFollowUp,
-    updateClient, contentPosts, getUnpaidInvoices, updateUpworkProposal,
+    projects, getProposalsNeedingFollowUp,
+    updateClient, contentPosts, getUnpaidInvoices,
     getOverdueInvoices, getThisMonthTotalPKR, revenueSettings,
     platforms, addPlatform, updatePlatform, removePlatform,
   } = useAgencyStore();
@@ -61,6 +79,7 @@ export default function MorningHQ() {
   }
 
   const { getTodayTasks, setTaskStatus } = useTaskStore();
+  const navigate = useUiStore(s => s.navigate);
 
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -68,7 +87,7 @@ export default function MorningHQ() {
     return () => clearInterval(t);
   }, []);
 
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = localISO(now);
   const todayDOW   = now.getDay();
   const todayTheme = DAILY_THEME[todayDOW];
   const themeKey   = THEME_CHECKS_PREFIX + todayStr;
@@ -90,48 +109,41 @@ export default function MorningHQ() {
     // Rule 1 — overdue invoices
     const overdueInv = getOverdueInvoices();
     if (overdueInv.length > 0)
-      return `You have ${overdueInv.length} overdue invoice${overdueInv.length > 1 ? 's' : ''} — chase payments first.`;
+      return { to: 'revenue', text: `You have ${overdueInv.length} overdue invoice${overdueInv.length > 1 ? 's' : ''} — chase payments first.` };
 
     // Rule 2 — revenue behind
     const monthPKR  = getThisMonthTotalPKR();
     const target    = revenueSettings?.monthlyTarget || 300000;
     const daysLeft  = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
     if (monthPKR < target * 0.4 && daysLeft > 15)
-      return `Revenue is behind — post a For Hire on Reddit and Upwork today.`;
-
-    // Rule 3 — Upwork follow-ups
-    const upwFU = getProposalsNeedingUpworkFollowUp();
-    if (upwFU.length >= 2) {
-      const days = Math.floor((new Date() - new Date(upwFU[0].applied_date)) / 86400000);
-      return `Follow up on "${upwFU[0].job_title}" and "${upwFU[1].job_title}" on Upwork — waiting ${days} days.`;
-    }
+      return { to: 'revenue', text: `Revenue is behind — post a [For Hire] on Reddit and reach out on LinkedIn today.` };
 
     // Rule 4 — pipeline follow-ups
     const pipeFU = getProposalsNeedingFollowUp();
     if (pipeFU.length >= 2) {
       const days = pipeFU[0].days_waiting;
-      return `Contact ${pipeFU[0].name} and ${pipeFU[1].name} — proposals sent ${days} days ago.`;
+      return { to: 'pipeline', text: `Contact ${pipeFU[0].name} and ${pipeFU[1].name} — proposals sent ${days} days ago.` };
     }
 
     // Rule 5 — no content today and no content next 7 days
     const next7 = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(now); d.setDate(d.getDate() + i); return d.toISOString().split('T')[0];
+      const d = new Date(now); d.setDate(d.getDate() + i); return localISO(d);
     });
     const hasContent = contentPosts.some(p => next7.includes(p.date));
     if (!hasContent)
-      return `Content calendar is empty — open it and plan 3 posts now.`;
+      return { to: 'content_calendar', text: `Content calendar is empty for the next 7 days — plan 3 posts now.` };
 
     // Rule 6 — project past deadline
     const overdueProj = (projects || []).find(p => p.deadline && p.deadline < todayStr && p.deliverables?.some(d => !d.done));
     if (overdueProj)
-      return `${overdueProj.client_name} project is past deadline.`;
+      return { to: 'projects', text: `${overdueProj.client_name} project is past deadline.` };
 
     // Rule 7 — low streak
     if (streak < 3)
-      return `Your streak is ${streak} day${streak !== 1 ? 's' : ''} — check all ${platforms.length} platforms today.`;
+      return { to: 'platform_checklist', text: `Your streak is ${streak} day${streak !== 1 ? 's' : ''} — check all ${platforms.length} platforms today.` };
 
     // Rule 8 — all clear
-    return `All clear — focus on delivering active projects.`;
+    return { to: 'projects', text: `All clear — focus on delivering active projects.` };
   }
   const prioritySignal = getPrioritySignal();
   const donePlatforms = platforms.filter(p => todayChecks[p.id]).length;
@@ -144,11 +156,10 @@ export default function MorningHQ() {
     .slice(0, 3);
 
   const clientFollowUps = getProposalsNeedingFollowUp();
-  const upworkFollowUps = getProposalsNeedingUpworkFollowUp();
   const todayContent    = contentPosts.filter(p => p.date === todayStr);
   const unpaidInvoices  = getUnpaidInvoices();
 
-  const urgentDate = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+  const urgentDate = addDaysISO(todayStr, 3);
 
   return (
     <div className="morning-hq">
@@ -167,34 +178,36 @@ export default function MorningHQ() {
       </div>
 
       {/* ── Priority signal box ── */}
-      <div className="agency-smart-action">
-        <div className="agency-smart-action-label">💡 Priority signal</div>
-        <div className="agency-smart-action-text">{prioritySignal}</div>
-      </div>
+      <button className="signal" onClick={() => navigate(prioritySignal.to)}>
+        <span className="signal-icon"><Icon name="flag" size={16} /></span>
+        <span className="signal-body">
+          <span className="signal-label">Priority now</span>
+          <span className="signal-text">{prioritySignal.text}</span>
+        </span>
+        <Icon name="arrowRight" size={16} className="signal-arrow" />
+      </button>
+
+      <TeamSnapshot />
 
       {/* ── Section 2: Platform chips ── */}
       <div className="agency-card" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div className="morning-section-label" style={{ marginBottom: 0 }}>
-            Platforms — {donePlatforms}/{platforms.length} done today
-          </div>
-          <button
-            onClick={() => setShowPlatformEdit(true)}
-            title="Edit platforms"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 14, padding: '2px 4px', lineHeight: 1 }}
-          >✏</button>
-        </div>
+        <CardHead
+          title="Platforms"
+          sub={`${donePlatforms}/${platforms.length} done today`}
+          to="platform_checklist" label="Checklist"
+          right={<button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowPlatformEdit(true)} title="Edit platforms" aria-label="Edit platforms"><Icon name="pencil" size={14} /></button>}
+        />
         <div className="morning-hq-platform-chips">
           {platforms.map(p => (
             <button
               key={p.id}
               className={'platform-chip' + (todayChecks[p.id] ? ' done' : '')}
               onClick={() => togglePlatformCheck(p.id)}
-              style={{ borderColor: todayChecks[p.id] ? p.color + '99' : undefined }}
+              style={{ borderColor: todayChecks[p.id] ? `color-mix(in srgb, ${p.color} 60%, transparent)` : undefined }}
             >
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.color, flexShrink: 0, display: 'inline-block' }} />
               {p.name}
-              {todayChecks[p.id] && <span style={{ color: '#16a34a', fontSize: 11 }}>✓</span>}
+              {todayChecks[p.id] && <span style={{ color: 'var(--green)', fontSize: 11 }}>✓</span>}
             </button>
           ))}
         </div>
@@ -212,7 +225,7 @@ export default function MorningHQ() {
             <div className="agency-modal-title">Edit Platforms</div>
             <div style={{ marginBottom: 16 }}>
               {platforms.map(p => (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--surface-2)' }}>
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, flexShrink: 0, display: 'inline-block' }} />
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.name}</span>
                   <button className="agency-btn agency-btn-secondary agency-btn-sm" onClick={() => openEditPlatform(p)}>Edit</button>
@@ -253,35 +266,34 @@ export default function MorningHQ() {
 
       {/* ── Today's focus card ── */}
       <div className="agency-card" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div>
-            <div className="morning-section-label" style={{ marginBottom: 2 }}>{todayTheme.label}</div>
-            <div style={{ fontSize: 12, color: '#64748b' }}>{todayTheme.sub}</div>
-          </div>
-          <span className="agency-badge agency-badge-blue" style={{ fontSize: 11 }}>{themeDone}/{themeTotal}</span>
-        </div>
+        <CardHead
+          title={`Today's focus · ${todayTheme.label}`}
+          sub={todayTheme.sub}
+          to="daily_tasks" label="Daily tasks"
+          right={<span className="agency-badge agency-badge-blue">{themeDone}/{themeTotal}</span>}
+        />
         <div style={{ marginBottom: 10 }}>
           {todayTheme.tasks.map((task, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < themeTotal - 1 ? '1px solid #f8fafc' : 'none' }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < themeTotal - 1 ? '1px solid var(--surface-2)' : 'none' }}>
               <button
                 onClick={() => toggleThemeCheck(i)}
                 style={{
                   width: 16, height: 16, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
-                  border: `1.5px solid ${themeChecks[i] ? '#22c55e' : '#cbd5e1'}`,
-                  background: themeChecks[i] ? '#22c55e' : 'transparent',
+                  border: `1.5px solid ${themeChecks[i] ? 'var(--green)' : 'var(--border-strong)'}`,
+                  background: themeChecks[i] ? 'var(--green)' : 'transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
                 }}
               >
                 {themeChecks[i] && <span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span>}
               </button>
-              <span style={{ fontSize: 13, color: themeChecks[i] ? '#94a3b8' : '#334155', textDecoration: themeChecks[i] ? 'line-through' : 'none' }}>
+              <span style={{ fontSize: 13, color: themeChecks[i] ? 'var(--text-3)' : 'var(--text)', textDecoration: themeChecks[i] ? 'line-through' : 'none' }}>
                 {task}
               </span>
             </div>
           ))}
         </div>
-        <div style={{ background: '#f1f5f9', borderRadius: 99, height: 6, overflow: 'hidden' }}>
-          <div style={{ height: '100%', background: themeDone === themeTotal ? '#22c55e' : '#0057B8', width: `${Math.round((themeDone / themeTotal) * 100)}%`, borderRadius: 99, transition: 'width .3s' }} />
+        <div style={{ background: 'var(--surface-2)', borderRadius: 99, height: 6, overflow: 'hidden' }}>
+          <div style={{ height: '100%', background: themeDone === themeTotal ? 'var(--green)' : 'var(--accent)', width: `${Math.round((themeDone / themeTotal) * 100)}%`, borderRadius: 99, transition: 'width .3s' }} />
         </div>
       </div>
 
@@ -290,55 +302,55 @@ export default function MorningHQ() {
 
         {/* Today's tasks */}
         <div className="agency-card">
-          <div className="morning-section-label" style={{ marginBottom: 8 }}>Today's tasks</div>
+          <CardHead title="Today's tasks" to="today" />
           {todayTasksShown.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#94a3b8', padding: '4px 0' }}>No tasks due today</div>
+            <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '4px 0' }}>No tasks due today</div>
           ) : todayTasksShown.map(task => (
-            <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
+            <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--surface-2)' }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: PRI_COLOR[task.priority], flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: '#334155', flex: 1, lineHeight: 1.3 }}>{task.title}</span>
+              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1, lineHeight: 1.3 }}>{task.title}</span>
               <button
                 onClick={() => setTaskStatus(task.id, 'done')}
                 title="Mark done"
                 style={{
-                  background: 'none', border: '1.5px solid #cbd5e1', borderRadius: 5,
+                  background: 'none', border: '1.5px solid var(--border-strong)', borderRadius: 5,
                   width: 20, height: 20, cursor: 'pointer', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, color: '#64748b', transition: 'all .15s',
+                  fontSize: 10, color: 'var(--text-2)', transition: 'all .15s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.color = '#22c55e'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.color = '#64748b'; }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.color = 'var(--text-2)'; }}
               >✓</button>
             </div>
           ))}
           {todayTasks.length > 5 && (
-            <div style={{ fontSize: 12, color: '#0057B8', marginTop: 8, cursor: 'pointer' }}>
-              +{todayTasks.length - 5} more tasks →
-            </div>
+            <button className="link-btn" style={{ marginTop: 8 }} onClick={() => navigate('today')}>
+              +{todayTasks.length - 5} more <Icon name="arrowRight" size={13} />
+            </button>
           )}
         </div>
 
         {/* Active projects */}
         <div className="agency-card">
-          <div className="morning-section-label" style={{ marginBottom: 8 }}>Active projects</div>
+          <CardHead title="Active projects" to="projects" />
           {activeProjects.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#94a3b8', padding: '4px 0' }}>No active projects</div>
+            <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '4px 0' }}>No active projects</div>
           ) : activeProjects.map(p => {
             const nextDel = p.deliverables?.find(d => !d.uzair_reviewed && !d.done);
             const isUrgent = p.deadline && p.deadline <= urgentDate;
             return (
-              <div key={p.id} style={{ padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
+              <div key={p.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--surface-2)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1 }}>{p.client_name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', flex: 1 }}>{p.client_name}</span>
                   {isUrgent && (
                     <span className="agency-badge agency-badge-red" style={{ fontSize: 10 }}>Due soon</span>
                   )}
                 </div>
                 {nextDel && (
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 1 }}>Next: {nextDel.title}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 1 }}>Next: {nextDel.title}</div>
                 )}
                 {p.deadline && (
-                  <div style={{ fontSize: 11, color: isUrgent ? '#ef4444' : '#94a3b8' }}>
+                  <div style={{ fontSize: 11, color: isUrgent ? 'var(--red)' : 'var(--text-3)' }}>
                     Deadline: {p.deadline}
                   </div>
                 )}
@@ -351,42 +363,15 @@ export default function MorningHQ() {
       {/* ── Section 5a: Client follow-ups ── */}
       {clientFollowUps.length > 0 && (
         <div className="agency-alert-banner">
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>
-            ⚠ {clientFollowUps.length} client proposal{clientFollowUps.length !== 1 ? 's' : ''} need a follow-up
-          </div>
+          <CardHead title={`${clientFollowUps.length} proposal${clientFollowUps.length !== 1 ? 's' : ''} need a follow-up`} to="pipeline" label="Clients" />
           {clientFollowUps.map(c => (
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
               <span style={{ fontSize: 13, flex: 1 }}>
-                {c.name} — <span style={{ color: '#b45309' }}>{c.days_waiting} days waiting</span>
+                {c.name} — <span style={{ color: 'var(--amber)' }}>{c.days_waiting} days waiting</span>
               </span>
               <button
                 className="agency-btn agency-btn-secondary agency-btn-sm"
-                onClick={() => updateClient(c.id, { proposal_sent_date: new Date().toISOString().split('T')[0] })}
-              >
-                Mark followed up
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Section 5b: Upwork follow-ups ── */}
-      {upworkFollowUps.length > 0 && (
-        <div className="agency-alert-banner">
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>
-            ⚠ {upworkFollowUps.length} Upwork application{upworkFollowUps.length !== 1 ? 's' : ''} need follow-up
-          </div>
-          {upworkFollowUps.map(p => (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-              <span style={{ fontSize: 13, flex: 1 }}>
-                {p.job_title} — <span style={{ color: '#b45309' }}>{p.days_waiting} days</span>
-              </span>
-              <button
-                className="agency-btn agency-btn-secondary agency-btn-sm"
-                onClick={() => updateUpworkProposal(p.id, {
-                  follow_up_sent: true,
-                  follow_up_date: new Date().toISOString().split('T')[0],
-                })}
+                onClick={() => updateClient(c.id, { proposal_sent_date: localISO() })}
               >
                 Mark followed up
               </button>
@@ -397,13 +382,13 @@ export default function MorningHQ() {
 
       {/* ── Section 6: Today's content ── */}
       <div className="agency-card" style={{ marginBottom: 14 }}>
-        <div className="morning-section-label" style={{ marginBottom: 8 }}>Today's content</div>
+        <CardHead title="Today's content" to="content_calendar" label="Calendar" />
         {todayContent.length === 0 ? (
-          <div style={{ fontSize: 13, color: '#94a3b8' }}>No content planned — add something</div>
+          <div style={{ fontSize: 13, color: 'var(--text-3)' }}>No content planned — add something</div>
         ) : todayContent.map(post => (
           <div key={post.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
             <span className="agency-badge agency-badge-blue" style={{ fontSize: 10 }}>{post.platform}</span>
-            <span style={{ fontSize: 13, color: '#334155', flex: 1 }}>{post.topic}</span>
+            <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{post.topic}</span>
             <span className={`agency-badge ${
               post.status === 'posted' ? 'agency-badge-green' :
               post.status === 'ready'  ? 'agency-badge-blue'  :
@@ -417,29 +402,62 @@ export default function MorningHQ() {
       {/* ── Section 7: Unpaid invoices ── */}
       {unpaidInvoices.length > 0 && (
         <div className="agency-danger-banner">
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>
-            💰 {unpaidInvoices.length} invoice{unpaidInvoices.length !== 1 ? 's' : ''} unpaid
-          </div>
+          <CardHead title={`${unpaidInvoices.length} unpaid invoice${unpaidInvoices.length !== 1 ? 's' : ''}`} to="revenue" label="Revenue" />
           {unpaidInvoices.slice(0, 3).map(inv => {
             const overdue = inv.due_date && inv.due_date < todayStr;
             const days = inv.due_date
               ? Math.floor((new Date() - new Date(inv.due_date)) / 86400000)
               : 0;
             return (
-              <div key={inv.id} style={{ fontSize: 12, color: '#b91c1c', marginBottom: 2 }}>
+              <div key={inv.id} style={{ fontSize: 12, color: 'var(--red)', marginBottom: 2 }}>
                 {inv.client_name} · {inv.amount} {inv.currency}
                 {overdue && days > 0 ? ` (${days}d overdue)` : ''}
               </div>
             );
           })}
           {unpaidInvoices.length > 3 && (
-            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>
               +{unpaidInvoices.length - 3} more in Revenue dashboard
             </div>
           )}
         </div>
       )}
 
+    </div>
+  );
+}
+
+// Open team work and unread updates, so employee progress is visible from the home screen.
+function TeamSnapshot() {
+  const employees = useTeamStore(s => s.employees);
+  const serverTasks = useTeamStore(s => s.serverTasks);
+  const notifications = useTeamStore(s => s.notifications);
+  const navigate = useUiStore(s => s.navigate);
+  if (!employees.length) return null;
+  const open = serverTasks.filter(t => t.status !== 'done');
+  const unread = notifications.filter(n => !Number(n.is_read));
+  const latest = unread[0] || notifications[0];
+  return (
+    <div className="agency-card team-snapshot">
+      <CardHead title="Team" sub={`${open.length} open task${open.length !== 1 ? 's' : ''} across ${employees.length} ${employees.length === 1 ? 'person' : 'people'}`} to="team" label="Open Team" />
+      <div className="team-snapshot-row">
+        {employees.map((e, i) => {
+          const mine = open.filter(t => t.assignee_name === e.name);
+          return (
+            <span key={e.id} className="team-snapshot-person">
+              <span className={`avatar avatar-sm avatar-c${i % 6}`}>{e.name.charAt(0).toUpperCase()}</span>
+              {e.name} <span className="muted-small">{mine.length} open</span>
+            </span>
+          );
+        })}
+      </div>
+      {latest && (
+        <button className={'team-snapshot-latest' + (unread.length ? ' is-unread' : '')} onClick={() => navigate('team', latest.task_id ? { taskId: latest.task_id } : null)}>
+          <Icon name="checkCircle" size={14} />
+          <span>{latest.message}</span>
+          {unread.length > 1 && <span className="badge badge-accent">+{unread.length - 1} more</span>}
+        </button>
+      )}
     </div>
   );
 }

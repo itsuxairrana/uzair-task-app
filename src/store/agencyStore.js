@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
+import { localISO } from '../utils/date';
 
 const KEYS = {
   dailyChecks:     'uzair_agency_daily_checks',
@@ -10,7 +11,6 @@ const KEYS = {
   projects:        'uzair_agency_projects',
   teamTasks:       'uzair_agency_team_tasks',
   content:         'uzair_agency_content',
-  upworkProposals: 'uzair_agency_upwork_proposals',
   weeklyNotes:     'uzair_agency_weekly_notes',
   teamMembers:     'uzair_agency_team_members',
   platforms:       'uzair_agency_platforms',
@@ -30,7 +30,7 @@ export const useAgencyStore = create((set, get) => ({
   dailyChecks: load(KEYS.dailyChecks, {}),
 
   togglePlatformCheck(platform) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localISO();
     set(st => {
       const c = { ...st.dailyChecks };
       c[today] = { ...(c[today]||{}), [platform]: !(c[today]||{})[platform] };
@@ -40,7 +40,7 @@ export const useAgencyStore = create((set, get) => ({
   },
 
   getTodayChecks() {
-    return get().dailyChecks[new Date().toISOString().split('T')[0]] || {};
+    return get().dailyChecks[localISO()] || {};
   },
 
   getDayChecks(d) { return get().dailyChecks[d] || {}; },
@@ -52,7 +52,7 @@ export const useAgencyStore = create((set, get) => ({
     let streak = 0;
     const d = new Date(); d.setDate(d.getDate() - 1);
     while (streak < 365) {
-      const key = d.toISOString().split('T')[0];
+      const key = localISO(d);
       if (!ps.every(p => (checks[key]||{})[p])) break;
       streak++; d.setDate(d.getDate() - 1);
     }
@@ -117,7 +117,7 @@ export const useAgencyStore = create((set, get) => ({
 
   markInvoicePaid(id) {
     set(st => {
-      const a = st.invoices.map(i => i.id === id ? { ...i, paid: true, paid_date: new Date().toISOString().split('T')[0] } : i);
+      const a = st.invoices.map(i => i.id === id ? { ...i, paid: true, paid_date: localISO() } : i);
       save(KEYS.invoices, a); return { invoices: a };
     });
   },
@@ -129,7 +129,7 @@ export const useAgencyStore = create((set, get) => ({
   getUnpaidInvoices() { return get().invoices.filter(i => !i.paid); },
 
   getOverdueInvoices() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localISO();
     return get().invoices.filter(i => !i.paid && i.due_date && i.due_date < today);
   },
 
@@ -155,7 +155,7 @@ export const useAgencyStore = create((set, get) => ({
 
   moveClient(id, newStage) {
     const upd = { stage: newStage };
-    if (newStage === 'proposal') upd.proposal_sent_date = new Date().toISOString().split('T')[0];
+    if (newStage === 'proposal') upd.proposal_sent_date = localISO();
     get().updateClient(id, upd);
   },
 
@@ -239,32 +239,6 @@ export const useAgencyStore = create((set, get) => ({
 
   deleteContentPost(id) {
     set(st => { const a = st.contentPosts.filter(p => p.id !== id); save(KEYS.content, a); return { contentPosts: a }; });
-  },
-
-  // ── UPWORK PROPOSALS ─────────────────────────────────────────────────────
-  upworkProposals: load(KEYS.upworkProposals, []),
-
-  addUpworkProposal(proposal) {
-    const p = { id: uuidv4(), status:'applied', follow_up_sent:false, follow_up_date:null,
-      created_at: new Date().toISOString(), ...proposal };
-    set(st => { const a = [...st.upworkProposals, p]; save(KEYS.upworkProposals, a); return { upworkProposals: a }; });
-  },
-
-  updateUpworkProposal(id, upd) {
-    set(st => { const a = st.upworkProposals.map(p => p.id === id ? { ...p, ...upd } : p); save(KEYS.upworkProposals, a); return { upworkProposals: a }; });
-  },
-
-  deleteUpworkProposal(id) {
-    set(st => { const a = st.upworkProposals.filter(p => p.id !== id); save(KEYS.upworkProposals, a); return { upworkProposals: a }; });
-  },
-
-  getProposalsNeedingUpworkFollowUp() {
-    const today = new Date();
-    return get().upworkProposals
-      .filter(p => p.status === 'applied' && !p.follow_up_sent && p.applied_date)
-      .map(p => ({ ...p, days_waiting: Math.floor((today - new Date(p.applied_date)) / 86400000) }))
-      .filter(p => p.days_waiting >= 5)
-      .sort((a,b) => b.days_waiting - a.days_waiting);
   },
 
   // ── WEEKLY NOTES ─────────────────────────────────────────────────────────

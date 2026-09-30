@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useAgencyStore } from '../../store/agencyStore';
+import { localISO } from '../../utils/date';
 
 const STAGES = ['lead','proposal','active','delivered','retainer','closed'];
 const STAGE_LABEL = { lead:'Lead', proposal:'Proposal', active:'Active', delivered:'Delivered', retainer:'Retainer', closed:'Closed' };
 const SERVICES  = ['brand_identity','website','video','social_media','combo','other'];
-const PLATFORMS = ['fiverr','upwork','contra','linkedin','reddit','direct'];
+const PLATFORMS = ['fiverr','contra','linkedin','reddit','direct'];
 const LEAD_SRCS = [
   { id:'company',         label:'Company' },
   { id:'junaid_direct',   label:'Junaid Direct' },
@@ -55,8 +56,8 @@ export default function ClientPipeline() {
   }
 
   function handleCreateInvoice(client) {
-    const today = new Date().toISOString().split('T')[0];
-    const due   = new Date(Date.now() + 7*86400000).toISOString().split('T')[0];
+    const today = localISO();
+    const due   = localISO(new Date(Date.now() + 7*86400000));
     addInvoice({ client_name: client.name, amount: client.value, currency: client.currency, delivered_date: today, due_date: due, notes: '' });
     setInvPrompt(null);
   }
@@ -92,7 +93,7 @@ export default function ClientPipeline() {
             <span key={c.id}>
               {i > 0 && ' · '}
               <strong>{c.name}</strong>
-              <span style={{ color: c.days_waiting >= 5 ? '#b91c1c' : '#92400e' }}> ({c.days_waiting} days)</span>
+              <span style={{ color: c.days_waiting >= 5 ? 'var(--red)' : 'var(--amber)' }}> ({c.days_waiting} days)</span>
             </span>
           ))}
         </div>
@@ -108,7 +109,7 @@ export default function ClientPipeline() {
               <div className="agency-kanban-col-header">
                 <span>{STAGE_LABEL[stage]}</span>
                 <span style={{ background:'rgba(0,0,0,.06)', borderRadius:99, padding:'1px 7px', fontSize:10 }}>{cols.length}</span>
-                {total > 0 && <span style={{ marginLeft:'auto', fontSize:10, color:'#94a3b8' }}>{pkrFmt(total)}</span>}
+                {total > 0 && <span style={{ marginLeft:'auto', fontSize:10, color:'var(--text-3)' }}>{pkrFmt(total)}</span>}
               </div>
 
               {cols.map(c => {
@@ -134,12 +135,12 @@ export default function ClientPipeline() {
                     </div>
 
                     {c.value && (
-                      <div style={{ fontSize:12, fontWeight:600, color:'#1e293b', marginBottom:3 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:'var(--text)', marginBottom:3 }}>
                         {c.value} {c.currency}
                       </div>
                     )}
 
-                    <div style={{ fontSize:11, color:'#94a3b8', marginBottom:5 }}>{days}d in stage</div>
+                    <div style={{ fontSize:11, color:'var(--text-3)', marginBottom:5 }}>{days}d in stage</div>
 
                     {followUp && (
                       <div style={{ marginBottom:5 }}>
@@ -163,7 +164,7 @@ export default function ClientPipeline() {
               })}
 
               {cols.length === 0 && (
-                <div style={{ fontSize:12, color:'#cbd5e1', textAlign:'center', padding:'12px 0' }}>Empty</div>
+                <div style={{ fontSize:12, color:'var(--border-strong)', textAlign:'center', padding:'12px 0' }}>Empty</div>
               )}
             </div>
           );
@@ -228,7 +229,7 @@ export default function ClientPipeline() {
         <div className="agency-modal-overlay">
           <div className="agency-modal" style={{ width:380 }}>
             <div className="agency-modal-title">Create Invoice?</div>
-            <p style={{ fontSize:13, color:'#475569', marginBottom:20 }}>
+            <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:20 }}>
               Create an unpaid invoice for <strong>{invPrompt.name}</strong>?<br />
               Amount: <strong>{invPrompt.value} {invPrompt.currency}</strong> · Due in 7 days
             </p>

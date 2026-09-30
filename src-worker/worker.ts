@@ -128,7 +128,7 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
     const tasks = isAdmin
       ? await all(env, `SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_user_id=u.id ORDER BY t.created_at DESC`)
       : await all(env, `SELECT t.* FROM tasks t WHERE t.assigned_user_id=? ORDER BY t.created_at DESC`, userId);
-    for (const t of tasks) t.milestones = await all(env, "SELECT * FROM milestones WHERE task_id=? ORDER BY id ASC", t.id);
+    for (const t of tasks) t.milestones = await all(env, "SELECT * FROM milestones WHERE task_id=? ORDER BY rowid ASC", t.id);
     return json({ tasks });
   }
 
@@ -154,12 +154,15 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
       ).bind(b.id, text(b.title), text(b.notes), b.priority || "medium", b.status || "todo", b.due_date || null, text(b.due_time), text(b.assigned_to), assigneeId, b.workspace || "personal", text(b.client_tag), userId).run();
     }
 
-    if (Array.isArray(b.milestones) && b.milestones.length) {
+    if (Array.isArray(b.milestones)) {
+      // Replace the whole list so removed steps disappear for the employee too.
       await env.DB.prepare("DELETE FROM milestones WHERE task_id=?").bind(b.id).run();
-      const stmts = b.milestones.map((m: any) =>
-        env.DB.prepare("INSERT INTO milestones (id, task_id, title, instruction, done) VALUES (?,?,?,?,?)").bind(m.id, b.id, text(m.title), text(m.instruction), bool(m.done) ? 1 : 0),
-      );
-      await env.DB.batch(stmts);
+      if (b.milestones.length) {
+        const stmts = b.milestones.map((m: any) =>
+          env.DB.prepare("INSERT INTO milestones (id, task_id, title, instruction, done) VALUES (?,?,?,?,?)").bind(m.id, b.id, text(m.title), text(m.instruction), bool(m.done) ? 1 : 0),
+        );
+        await env.DB.batch(stmts);
+      }
     }
     return json({ ok: true });
   }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAgencyStore } from '../../store/agencyStore';
+import { localISO } from '../../utils/date';
 
 const SERVICES = ['brand_identity', 'website', 'video', 'social_media'];
 const SERVICE_LABEL = { brand_identity: 'Brand Identity', website: 'Website', video: 'Video', social_media: 'Social Media' };
@@ -16,7 +17,7 @@ const EMPTY = { client_name: '', service: 'brand_identity', deadline: '', notes:
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
-  return Math.ceil((new Date(dateStr) - new Date(new Date().toISOString().split('T')[0])) / 86400000);
+  return Math.ceil((new Date(dateStr) - new Date(localISO())) / 86400000);
 }
 
 export default function ProjectTracker() {
@@ -71,7 +72,7 @@ export default function ProjectTracker() {
 
       {/* Project cards */}
       {sorted.length === 0 ? (
-        <div className="agency-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
+        <div className="agency-card" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-3)' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
           <div style={{ fontSize: 14 }}>No active projects. Click <strong>+ Add Project</strong> to start.</div>
         </div>
@@ -92,14 +93,14 @@ export default function ProjectTracker() {
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: '#1e293b' }}>{p.client_name}</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{p.client_name}</span>
                     <span className="agency-badge agency-badge-blue" style={{ fontSize: 10 }}>{SERVICE_LABEL[p.service] || p.service}</span>
                     {p.revision_round > 1 && (
                       <span className="agency-badge agency-badge-grey" style={{ fontSize: 10 }}>Rev {p.revision_round}</span>
                     )}
                   </div>
                   {p.deadline && (
-                    <div style={{ fontSize: 12, marginTop: 4, color: overdue ? '#b91c1c' : urgent ? '#d97706' : '#64748b', fontWeight: overdue || urgent ? 600 : 400 }}>
+                    <div style={{ fontSize: 12, marginTop: 4, color: overdue ? 'var(--red)' : urgent ? 'var(--amber)' : 'var(--text-2)', fontWeight: overdue || urgent ? 600 : 400 }}>
                       {overdue ? `⚠ Overdue by ${Math.abs(days)}d` : urgent ? `⚡ Due in ${days}d` : `Due ${p.deadline}`}
                     </div>
                   )}
@@ -112,7 +113,7 @@ export default function ProjectTracker() {
 
               {/* Progress bar */}
               <div style={{ marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b', marginBottom: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-2)', marginBottom: 4 }}>
                   <span>{done}/{total} deliverables</span>
                   <span>{pct}%</span>
                 </div>
@@ -141,19 +142,19 @@ export default function ProjectTracker() {
 
               {/* Deliverable list */}
               {isExpanded && (
-                <div style={{ marginTop: 12, borderTop: '1px solid #f1f5f9', paddingTop: 10 }}>
+                <div style={{ marginTop: 12, borderTop: '1px solid var(--surface-2)', paddingTop: 10 }}>
                   {(p.deliverables || []).map((d, idx) => (
                     <div
                       key={d.id}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '6px 0',
-                        borderBottom: idx < p.deliverables.length - 1 ? '1px solid #f8fafc' : 'none',
+                        borderBottom: idx < p.deliverables.length - 1 ? '1px solid var(--surface-2)' : 'none',
                         opacity: d.done ? 0.6 : 1,
                       }}
                     >
                       {/* Step number */}
-                      <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 18, textAlign: 'right' }}>{idx + 1}.</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', minWidth: 18, textAlign: 'right' }}>{idx + 1}.</span>
 
                       {/* Done checkbox — disabled until reviewed */}
                       <input
@@ -162,12 +163,12 @@ export default function ProjectTracker() {
                         disabled={!d.uzair_reviewed}
                         onChange={() => toggleDeliverableDone(p.id, d.id)}
                         title={d.uzair_reviewed ? 'Mark done' : 'Review first before marking done'}
-                        style={{ cursor: d.uzair_reviewed ? 'pointer' : 'not-allowed', accentColor: '#0057B8', width: 15, height: 15, flexShrink: 0 }}
+                        style={{ cursor: d.uzair_reviewed ? 'pointer' : 'not-allowed', accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
                       />
 
                       {/* Title */}
                       <span style={{
-                        flex: 1, fontSize: 13, color: '#334155',
+                        flex: 1, fontSize: 13, color: 'var(--text)',
                         textDecoration: d.done ? 'line-through' : 'none',
                       }}>
                         {d.title}
@@ -189,7 +190,7 @@ export default function ProjectTracker() {
 
               {/* Notes */}
               {p.notes && (
-                <div style={{ marginTop: 8, fontSize: 12, color: '#64748b', borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-2)', borderTop: '1px solid var(--surface-2)', paddingTop: 8 }}>
                   {p.notes}
                 </div>
               )}
@@ -228,7 +229,7 @@ export default function ProjectTracker() {
                   >
                     {SERVICES.map(s => <option key={s} value={s}>{SERVICE_LABEL[s]}</option>)}
                   </select>
-                  {!editProj && <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>Sets deliverable checklist (can't change after add)</div>}
+                  {!editProj && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>Sets deliverable checklist (can't change after add)</div>}
                 </div>
 
                 <div className="agency-form-row" style={{ margin: 0 }}>
@@ -255,7 +256,7 @@ export default function ProjectTracker() {
               </div>
 
               {!editProj && (
-                <div style={{ marginTop: 10, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 12, color: '#64748b' }}>
+                <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 6, fontSize: 12, color: 'var(--text-2)' }}>
                   📋 Deliverables will be pre-filled from the <strong>{SERVICE_LABEL[form.service]}</strong> template ({DELIVERABLE_TEMPLATES[form.service]?.length} steps)
                 </div>
               )}

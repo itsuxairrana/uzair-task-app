@@ -1,373 +1,40 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useTaskStore } from './store/taskStore';
 import { useAgencyStore } from './store/agencyStore';
+import { useUiStore } from './store/uiStore';
+import { useTeamStore } from './store/teamStore';
 import { signIn, signOut, isSignedIn, getGoogleUser, isGoogleConfigured, refreshGoogleStatus, clearGoogleCache } from './services/googleAuth';
-import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
-import { getTeam, saveTeam } from './services/gmailApi';
-import { verifyToken, clearAuth, getUser, changePassword, addTeamMember, fetchTeam } from './services/authApi';
-import { fetchNotifications, markNotificationsRead, resetEmployeePassword } from './services/taskSyncApi';
+import { verifyToken, clearAuth, getUser } from './services/authApi';
+import { localISO } from './utils/date';
 import EmployeeDashboard from './components/EmployeeDashboard';
-import WorkspaceTabs from './components/WorkspaceTabs';
 import Dashboard from './components/Dashboard';
 import Chat from './components/Chat';
 import ConfirmScreen from './components/ConfirmScreen';
 import LoginScreen from './components/LoginScreen';
+import SettingsModal from './components/SettingsModal';
+import Sidebar from './components/Sidebar';
+import { NAV_LABEL } from './nav';
+import Topbar from './components/Topbar';
+import Icon from './components/Icon';
 import './App.css';
 
-const NAV_ITEMS = [
-  { id: 'morning_hq',  label: 'Morning HQ',  icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2.5" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M2.9 2.9l1.1 1.1M11 11l1.1 1.1M11 2.9l-1.1 1.1M4 11l-1.1 1.1" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
-  { id: 'today',       label: 'Today',       icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.25" y="2" width="12.5" height="11.5" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M1.25 5.5h12.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M4.5 1v2M10.5 1v2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M4.5 8.5h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-  { id: 'overdue',     label: 'Overdue',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 4.5v3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".75" fill="currentColor"/></svg> },
-  { id: 'agency_div',  label: 'AGENCY',      type: 'divider' },
-  { id: 'platform_checklist', label: 'Daily Platforms', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 8l3.5 3.5L13 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
-  { id: 'daily_tasks', label: 'Daily Tasks', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M4.5 7.5l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
-  { id: 'revenue',     label: 'Revenue',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 4v7M5.5 5.5h3a1 1 0 010 2h-2a1 1 0 000 2h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
-  { id: 'pipeline',    label: 'Clients',     icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="3" height="9" rx="1" stroke="currentColor" strokeWidth="1.35"/><rect x="6" y="5" width="3" height="7" rx="1" stroke="currentColor" strokeWidth="1.35"/><rect x="11" y="1" width="3" height="11" rx="1" stroke="currentColor" strokeWidth="1.35"/></svg> },
-  { id: 'projects',    label: 'Projects',    icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="1.5" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M4.5 5.5h6M4.5 7.5h6M4.5 9.5h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
-  { id: 'team',        label: 'Team',        icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="5" cy="4.5" r="2" stroke="currentColor" strokeWidth="1.35"/><circle cx="10.5" cy="4.5" r="2" stroke="currentColor" strokeWidth="1.35"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><path d="M10.5 8.5c1.9.4 3.5 2 3.5 3.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
-  { id: 'content_calendar', label: 'Content', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.25" y="2" width="12.5" height="11.5" rx="2" stroke="currentColor" strokeWidth="1.35"/><path d="M1.25 5.5h12.5" stroke="currentColor" strokeWidth="1.35"/><path d="M4.5 1v2M10.5 1v2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><circle cx="5" cy="9" r=".75" fill="currentColor"/><circle cx="7.5" cy="9" r=".75" fill="currentColor"/><circle cx="10" cy="9" r=".75" fill="currentColor"/></svg> },
-  { id: 'upwork_log',  label: 'Upwork Log',  icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="3.5" width="12" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.35"/><path d="M5 3.5V2.5a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" strokeWidth="1.35"/><path d="M5 7.5h5M5 9.5h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
-  { id: 'weekly_review', label: 'Weekly Review', icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1.5v3M7.5 10.5v3M1.5 7.5h3M10.5 7.5h3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/><circle cx="7.5" cy="7.5" r="3" stroke="currentColor" strokeWidth="1.35"/></svg> },
-  { id: 'settings',    label: 'Settings',    icon: <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2.25" stroke="currentColor" strokeWidth="1.35"/><path d="M7.5 1.5v1.25M7.5 12.25V13.5M1.5 7.5h1.25M12.25 7.5H13.5M3.1 3.1l.9.9M11 11l.9.9M3.1 11.9l.9-.9M11 4l.9-.9" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round"/></svg> },
-];
+// ── Theme / viewport ──────────────────────────────────────────────────────────
 
-// Models that have API keys (excludes 'free').
-// 'haiku' shares the same key as 'claude' — saving under 'claude' covers both.
-const KEY_MODELS = [
-  { id: 'gemini', label: 'Gemini API Key',          hint: 'FREE — aistudio.google.com', link: 'https://aistudio.google.com/app/apikey', placeholder: 'AIza...' },
-  { id: 'claude', label: 'Claude API Key',           hint: 'console.anthropic.com (covers Haiku + Sonnet)', link: 'https://console.anthropic.com/', placeholder: 'sk-ant-api03-...' },
-  { id: 'gpt4',   label: 'OpenAI API Key',           hint: 'platform.openai.com',        link: 'https://platform.openai.com/',           placeholder: 'sk-...' },
-  { id: 'grok',   label: 'Grok API Key',             hint: 'console.x.ai',               link: 'https://console.x.ai/',                  placeholder: 'xai-...' },
-];
-
-// ── Settings Modal ────────────────────────────────────────────────────────────
-
-function SettingsModal({ onClose, googleConnected, googleConfigured, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout, dbTeam, onAddEmployee }) {
-  const [inputs, setInputs] = useState(() =>
-    Object.fromEntries(KEY_MODELS.map(m => [m.id, getStoredKey(m.id)]))
+function useMediaQuery(query) {
+  return useSyncExternalStore(
+    cb => { const m = window.matchMedia(query); m.addEventListener('change', cb); return () => m.removeEventListener('change', cb); },
+    () => window.matchMedia(query).matches,
   );
-  const [saved, setSaved]       = useState({});
-  const [visible, setVisible]   = useState({});
-  const [activeTab, setActiveTab] = useState('keys'); // 'keys' | 'google' | 'team' | 'account'
-  const [team, setTeam]         = useState(getTeam);
-  const [newName, setNewName]   = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newPass, setNewPass]   = useState('');
-  const [resetPw, setResetPw]   = useState({}); // { [id]: newPassword }
-  const [resetMsg, setResetMsg] = useState({});  // { [id]: 'ok'|'err' }
-  const [pwCurrent, setPwCurrent] = useState('');
-  const [pwNew, setPwNew]         = useState('');
-  const [pwConfirm, setPwConfirm] = useState('');
-  const [pwMsg, setPwMsg]         = useState(null); // {type:'ok'|'err', text}
+}
 
-  function handleSave(modelId) {
-    setStoredKey(modelId, inputs[modelId]);
-    setSaved(prev => ({ ...prev, [modelId]: true }));
-    setTimeout(() => setSaved(prev => ({ ...prev, [modelId]: false })), 2000);
-  }
-
-  function handleClear(modelId) {
-    setStoredKey(modelId, '');
-    setInputs(prev => ({ ...prev, [modelId]: '' }));
-  }
-
-  function toggleVisible(modelId) {
-    setVisible(prev => ({ ...prev, [modelId]: !prev[modelId] }));
-  }
-
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal settings-modal">
-        <div className="modal-header">
-          <h2>Settings</h2>
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <button className="close-btn logout-btn" onClick={onLogout} title="Sign out">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            </button>
-            <button className="close-btn" onClick={onClose}>✕</button>
-          </div>
-        </div>
-
-        {/* Tab bar */}
-        <div className="settings-tabs">
-          <button className={'settings-tab' + (activeTab === 'keys' ? ' settings-tab-active' : '')} onClick={() => setActiveTab('keys')}>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5" cy="5.5" r="3" stroke="currentColor" strokeWidth="1.3"/><path d="M7.5 8l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5 4.5v2M4 5.5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-            API Keys
-          </button>
-          <button className={'settings-tab' + (activeTab === 'google' ? ' settings-tab-active' : '')} onClick={() => setActiveTab('google')}>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.3"/><path d="M1 6.5h11M6.5 1a8 8 0 0 1 0 11M6.5 1a8 8 0 0 0 0 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-            Google{googleConnected && <span className="tab-dot-ok" />}
-          </button>
-          <button className={'settings-tab' + (activeTab === 'team' ? ' settings-tab-active' : '')} onClick={() => setActiveTab('team')}>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="4.5" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/><circle cx="9" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/><path d="M1 11c0-2 1.6-3.5 3.5-3.5S8 9 8 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M9 7.5c1.7.3 3 1.7 3 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-            Team{team.length > 0 && <span className="tab-count">{team.length}</span>}
-          </button>
-          <button className={'settings-tab' + (activeTab === 'account' ? ' settings-tab-active' : '')} onClick={() => setActiveTab('account')}>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.3"/><path d="M1 12c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-            Account
-          </button>
-        </div>
-
-        <div className="settings-body">
-
-          {/* ── API Keys tab ── */}
-          {activeTab === 'keys' && (
-            <>
-              <p className="settings-info">
-                API keys are stored locally in your browser and never leave your device. The <strong>Free Local Parser</strong> works without any key.
-              </p>
-
-              <div className="settings-keys">
-                {KEY_MODELS.map(m => {
-                  const hasKey = isModelAvailable(m.id);
-                  const isSaved = saved[m.id];
-                  return (
-                    <div key={m.id} className="sk-row">
-                      <div className="sk-top">
-                        <div className="sk-info">
-                          <span className="sk-label">{m.label}</span>
-                          <a className="sk-hint" href={m.link} target="_blank" rel="noopener noreferrer">
-                            {m.hint} ↗
-                          </a>
-                        </div>
-                        <span className={'sk-badge ' + (hasKey ? 'sk-badge-ok' : 'sk-badge-missing')}>
-                          {hasKey ? '✓ Active' : 'Not set'}
-                        </span>
-                      </div>
-
-                      <div className="sk-input-row">
-                        <input
-                          className="sk-input"
-                          type={visible[m.id] ? 'text' : 'password'}
-                          value={inputs[m.id]}
-                          onChange={e => setInputs(prev => ({ ...prev, [m.id]: e.target.value }))}
-                          placeholder={m.placeholder}
-                          autoComplete="off"
-                          spellCheck={false}
-                        />
-                        <button className="sk-eye-btn" type="button" onClick={() => toggleVisible(m.id)} title={visible[m.id] ? 'Hide' : 'Show'}>
-                          {visible[m.id]
-                            ? <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1 6.5S3 2.5 6.5 2.5 12 6.5 12 6.5 10 10.5 6.5 10.5 1 6.5 1 6.5z" stroke="currentColor" strokeWidth="1.3"/><line x1="2" y1="11" x2="11" y2="2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                            : <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1 6.5S3 2.5 6.5 2.5 12 6.5 12 6.5 10 10.5 6.5 10.5 1 6.5 1 6.5z" stroke="currentColor" strokeWidth="1.3"/><circle cx="6.5" cy="6.5" r="1.5" stroke="currentColor" strokeWidth="1.3"/></svg>
-                          }
-                        </button>
-                        <button
-                          className={'sk-save-btn' + (isSaved ? ' sk-saved' : '')}
-                          type="button"
-                          onClick={() => handleSave(m.id)}
-                          disabled={!inputs[m.id]?.trim()}
-                        >
-                          {isSaved ? '✓ Saved' : 'Save'}
-                        </button>
-                        {hasKey && (
-                          <button className="sk-clear-btn" type="button" onClick={() => handleClear(m.id)} title="Remove key">
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="settings-note">
-                Your keys are stored exclusively in your browser. They are only transmitted directly to the selected AI provider — never to any third-party server.
-              </div>
-            </>
-          )}
-
-          {/* ── Google tab ── */}
-          {activeTab === 'google' && (
-            <div className="google-connect-section">
-              <div className="gc-header">
-                <div className="gc-title">🗓 Google Calendar &amp; Tasks</div>
-                <div className="gc-desc">
-                  Sync tasks to Google Calendar, Google Tasks and Gmail. Connect once — it stays connected (even after logout, on any device) until you click Disconnect.
-                </div>
-              </div>
-
-              {/* ── Connection status / button ── */}
-              {googleConnected ? (
-                <div className="gc-connected">
-                  <div className="gc-user-row">
-                    {googleUser?.picture
-                      ? <img src={googleUser.picture} alt="avatar" className="gc-avatar" />
-                      : <span className="gc-avatar-placeholder"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.4"/><path d="M3 16c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg></span>
-                    }
-                    <div className="gc-user-info">
-                      <span className="gc-user-name">{googleUser?.name || 'Google User'}</span>
-                      <span className="gc-user-email">{googleUser?.email || ''}</span>
-                    </div>
-                    <span className="gc-badge-ok">✓ Connected</span>
-                  </div>
-                  <div className="gc-perms">
-                    <span className="gc-perm-tag">Calendar Events</span>
-                    <span className="gc-perm-tag">Tasks</span>
-                  </div>
-                  <button className="gc-disconnect-btn" onClick={onGoogleDisconnect}>Disconnect</button>
-                </div>
-              ) : (
-                <div className="gc-disconnected">
-                  <button
-                    className="gc-connect-btn"
-                    onClick={onGoogleConnect}
-                    disabled={googleLoading || !googleConfigured}
-                  >
-                    {googleLoading ? 'Connecting…' : 'Connect Google Account'}
-                  </button>
-                  {!googleConfigured && (
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-                      Google isn't set up on the server yet (Client ID / secret missing).
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Team tab ── */}
-          {activeTab === 'team' && (
-            <div className="team-section">
-              <p className="settings-info">
-                Manage your team members. Each person receives a dedicated login and can only view tasks assigned to them.
-              </p>
-
-              {/* DB employees with password reset */}
-              {dbTeam.length === 0 ? (
-                <div className="team-empty">No employees yet. Add one below.</div>
-              ) : (
-                <div className="team-list">
-                  {dbTeam.map(member => (
-                    <div key={member.id} className="team-row team-row-expanded">
-                      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
-                        <div className="team-avatar">{member.name.charAt(0).toUpperCase()}</div>
-                        <div className="team-info">
-                          <span className="team-name">{member.name}</span>
-                          <span className="team-email">{member.email}</span>
-                        </div>
-                        <span className="team-role-badge">{member.role}</span>
-                      </div>
-                      <div className="sk-input-row" style={{marginTop:4}}>
-                        <input
-                          className="sk-input"
-                          type="password"
-                          placeholder="Set new password"
-                          value={resetPw[member.id] || ''}
-                          onChange={e => setResetPw(p => ({...p, [member.id]: e.target.value}))}
-                          autoComplete="new-password"
-                        />
-                        <button
-                          className={'sk-save-btn' + (resetMsg[member.id] === 'ok' ? ' sk-saved' : '')}
-                          disabled={!resetPw[member.id]?.trim()}
-                          onClick={async () => {
-                            try {
-                              await resetEmployeePassword(member.id, resetPw[member.id]);
-                              setResetMsg(m => ({...m, [member.id]: 'ok'}));
-                              setResetPw(p => ({...p, [member.id]: ''}));
-                              setTimeout(() => setResetMsg(m => ({...m, [member.id]: ''})), 2500);
-                            } catch(e) {
-                              setResetMsg(m => ({...m, [member.id]: 'err'}));
-                            }
-                          }}
-                        >
-                          {resetMsg[member.id] === 'ok' ? '✓ Updated' : 'Set Password'}
-                        </button>
-                      </div>
-                      {resetMsg[member.id] === 'err' && <div style={{fontSize:11,color:'#ef4444',marginTop:4}}>Failed to update password</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Add employee form */}
-              <div className="team-add-form" style={{flexDirection:'column',gap:8}}>
-                <div style={{display:'flex',gap:8}}>
-                  <input className="sk-input" style={{fontFamily:'var(--font)'}} type="text" placeholder="Full name" value={newName} onChange={e => setNewName(e.target.value)} />
-                  <input className="sk-input" style={{fontFamily:'var(--font)'}} type="email" placeholder="Email address" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
-                </div>
-                <div style={{display:'flex',gap:8}}>
-                  <input className="sk-input" style={{fontFamily:'var(--font)'}} type="password" placeholder="Temporary password (min 6 characters)" value={newPass} onChange={e => setNewPass(e.target.value)} />
-                  <button
-                    className="sk-save-btn"
-                    disabled={!newName.trim() || !newEmail.trim() || !newPass.trim()}
-                    onClick={() => {
-                      onAddEmployee(newName.trim(), newEmail.trim(), newPass);
-                      setNewName(''); setNewEmail(''); setNewPass('');
-                    }}
-                  >+ Add Employee</button>
-                </div>
-              </div>
-
-              <div className="settings-note">
-                Team members sign in at <strong>task.uzairvisuals.com</strong> using their email address and password. Each member has access only to their assigned tasks.
-              </div>
-            </div>
-          )}
-
-          {/* ── Account tab ── */}
-          {activeTab === 'account' && (
-            <div className="team-section">
-              <p className="settings-info">Update your admin account password.</p>
-              <div className="team-add-form" style={{flexDirection:'column',gap:10}}>
-                <input
-                  className="sk-input"
-                  style={{fontFamily:'var(--font)'}}
-                  type="password"
-                  placeholder="Current password"
-                  value={pwCurrent}
-                  onChange={e => setPwCurrent(e.target.value)}
-                  autoComplete="current-password"
-                />
-                <input
-                  className="sk-input"
-                  style={{fontFamily:'var(--font)'}}
-                  type="password"
-                  placeholder="New password (minimum 8 characters)"
-                  value={pwNew}
-                  onChange={e => setPwNew(e.target.value)}
-                  autoComplete="new-password"
-                />
-                <input
-                  className="sk-input"
-                  style={{fontFamily:'var(--font)'}}
-                  type="password"
-                  placeholder="Confirm new password"
-                  value={pwConfirm}
-                  onChange={e => setPwConfirm(e.target.value)}
-                  autoComplete="new-password"
-                />
-                {pwMsg && (
-                  <div style={{fontSize:12, color: pwMsg.type === 'ok' ? '#22c55e' : '#ef4444', padding:'4px 0'}}>
-                    {pwMsg.text}
-                  </div>
-                )}
-                <button
-                  className="sk-save-btn"
-                  style={{alignSelf:'flex-start'}}
-                  disabled={!pwCurrent || !pwNew || !pwConfirm}
-                  onClick={async () => {
-                    setPwMsg(null);
-                    if (pwNew !== pwConfirm) { setPwMsg({type:'err', text:'Passwords do not match'}); return; }
-                    if (pwNew.length < 8)    { setPwMsg({type:'err', text:'Min 8 characters'}); return; }
-                    try {
-                      await changePassword(pwCurrent, pwNew);
-                      setPwMsg({type:'ok', text:'Password changed successfully!'});
-                      setPwCurrent(''); setPwNew(''); setPwConfirm('');
-                    } catch(e) {
-                      setPwMsg({type:'err', text: e.message});
-                    }
-                  }}
-                >
-                  Change Password
-                </button>
-              </div>
-            </div>
-          )}
-
-        </div>
-      </div>
-    </div>
-  );
+function useApplyTheme() {
+  const theme = useUiStore(s => s.theme);
+  const systemDark = useMediaQuery('(prefers-color-scheme: dark)');
+  const resolved = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolved;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#0b0b0c' : '#f6f7f9');
+  }, [resolved]);
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -375,16 +42,13 @@ function SettingsModal({ onClose, googleConnected, googleConfigured, googleUser,
 export default function App() {
   const [authUser, setAuthUser]   = useState(getUser);
   const [authReady, setAuthReady] = useState(false);
+  useApplyTheme();
 
   useEffect(() => {
     verifyToken().then(user => { setAuthUser(user); setAuthReady(true); });
   }, []);
 
-  if (!authReady) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#0d1f3c', color:'#fff', fontSize:14 }}>
-      Loading…
-    </div>
-  );
+  if (!authReady) return <div className="boot"><span className="brand-mark">UV</span></div>;
   if (!authUser) return <LoginScreen onLogin={setAuthUser} />;
 
   const handleLogout = () => { clearAuth(); clearGoogleCache(); setAuthUser(null); };
@@ -398,51 +62,69 @@ export default function App() {
 }
 
 function AppShell({ authUser, onLogout }) {
-  const { setPendingTasks, pendingTasks } = useTaskStore();
-  const [googleUser, setGoogleUser]           = useState(getGoogleUser());
-  const [googleConnected, setGoogleConnected] = useState(isSignedIn());
+  const pendingTasks = useTaskStore(s => s.pendingTasks);
+  const setPendingTasks = useTaskStore(s => s.setPendingTasks);
+  const tasks = useTaskStore(s => s.tasks);
+  const activeNav = useUiStore(s => s.activeNav);
+  const sidebarCollapsed = useUiStore(s => s.sidebarCollapsed);
+  const aiOpen = useUiStore(s => s.aiOpen);
+  const setAiOpen = useUiStore(s => s.setAiOpen);
+  const toggleSidebar = useUiStore(s => s.toggleSidebar);
+  const settingsTab = useUiStore(s => s.settingsTab);
+  const openSettings = useUiStore(s => s.openSettings);
+  const notifications = useTeamStore(s => s.notifications);
+  const refreshTeam = useTeamStore(s => s.refreshAll);
+
+  // On narrow screens the assistant is an overlay, so it starts closed and isn't remembered.
+  const isNarrow = useMediaQuery('(max-width: 1100px)');
+  const [narrowAiOpen, setNarrowAiOpen] = useState(false);
+  const showAi = isNarrow ? narrowAiOpen : aiOpen;
+  const setShowAi = open => (isNarrow ? setNarrowAiOpen(open) : setAiOpen(open));
+
+  const [googleUser, setGoogleUser]             = useState(getGoogleUser());
+  const [googleConnected, setGoogleConnected]   = useState(isSignedIn());
   const [googleConfigured, setGoogleConfigured] = useState(isGoogleConfigured());
-  const [googleLoading, setGoogleLoading]     = useState(false);
-  const [showConfirm, setShowConfirm]         = useState(false);
-  const [chatOpen, setChatOpen]               = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeNav, setActiveNav]             = useState('morning_hq');
-  const [showSettings, setShowSettings]       = useState(false);
-  const [notifications, setNotifications]     = useState([]);
-  const [showNotifs, setShowNotifs]           = useState(false);
-  const [dbTeam, setDbTeam]                   = useState([]);
+  const [googleLoading, setGoogleLoading]       = useState(false);
+  const [showConfirm, setShowConfirm]           = useState(false);
 
-  // ── Agency sidebar badges — select raw state slices (stable refs) then compute outside ──
-  const agencyInvoices    = useAgencyStore(s => s.invoices);
-  const agencyClients     = useAgencyStore(s => s.clients);
-  const agencyUpwork      = useAgencyStore(s => s.upworkProposals);
-  const agencyTeamTasks   = useAgencyStore(s => s.teamTasks);
-  const agencyProjects    = useAgencyStore(s => s.projects);
-  const agencyDailyChecks = useAgencyStore(s => s.dailyChecks);
+  // ── Sidebar badges ──
+  const invoices    = useAgencyStore(s => s.invoices);
+  const clients     = useAgencyStore(s => s.clients);
+  const projects    = useAgencyStore(s => s.projects);
+  const dailyChecks = useAgencyStore(s => s.dailyChecks);
+  const platforms   = useAgencyStore(s => s.platforms);
 
-  const _today = new Date().toISOString().split('T')[0];
-  const overdueInvoices     = (agencyInvoices  || []).filter(i => !i.paid && i.due_date && i.due_date < _today);
-  const proposalFollowUps   = (agencyClients   || []).filter(c => c.stage === 'proposal' && c.proposal_sent_date && Math.floor((new Date() - new Date(c.proposal_sent_date)) / 86400000) >= 2);
-  const upworkFollowUps     = (agencyUpwork    || []).filter(p => p.status === 'applied' && !p.follow_up_sent && p.applied_date && Math.floor((new Date() - new Date(p.applied_date)) / 86400000) >= 5);
-  const pendingTeamTasks    = (agencyTeamTasks || []).filter(t => t.status === 'pending_review');
-  const overdueDeliverables = (agencyProjects  || []).filter(p => p.deadline && p.deadline < _today && p.deliverables?.some(d => !d.done));
-  const todayChecks         = (agencyDailyChecks || {})[_today] || {};
-  const allPlatformsDone    = ['fiverr','upwork','linkedin','reddit','discord','dribbble'].every(p => todayChecks[p]);
-  const BADGES = {
-    platform_checklist: allPlatformsDone ? null : { type: 'dot', color: 'green' },
-    revenue:   overdueInvoices.length     ? { type: 'count', value: overdueInvoices.length,     color: 'orange' } : null,
-    pipeline:  proposalFollowUps.length   ? { type: 'count', value: proposalFollowUps.length,   color: 'orange' } : null,
-    projects:  overdueDeliverables.length ? { type: 'count', value: overdueDeliverables.length, color: 'red'    } : null,
-    team:      pendingTeamTasks.length    ? { type: 'count', value: pendingTeamTasks.length,    color: 'orange' } : null,
-    upwork_log:upworkFollowUps.length     ? { type: 'count', value: upworkFollowUps.length,     color: 'orange' } : null,
+  const today = localISO();
+  const openTasks     = tasks.filter(t => t.status !== 'done');
+  const overdueCount  = openTasks.filter(t => t.due_date && t.due_date < today).length;
+  const todayCount    = openTasks.filter(t => t.due_date === today).length;
+  const overdueInv    = (invoices || []).filter(i => !i.paid && i.due_date && i.due_date < today).length;
+  const followUps     = (clients || []).filter(c => c.stage === 'proposal' && c.proposal_sent_date && Math.floor((Date.now() - new Date(c.proposal_sent_date)) / 86400000) >= 2).length;
+  const lateProjects  = (projects || []).filter(p => p.deadline && p.deadline < today && p.deliverables?.some(d => !d.done)).length;
+  const unread        = notifications.filter(n => !Number(n.is_read)).length;
+  const todayChecks   = (dailyChecks || {})[today] || {};
+  const platformsDone = platforms.length > 0 && platforms.every(p => todayChecks[p.id]);
+  const badges = {
+    today:              todayCount   ? { type: 'count', value: todayCount,   tone: 'grey' }   : null,
+    overdue:            overdueCount ? { type: 'count', value: overdueCount, tone: 'red' }    : null,
+    team:               unread       ? { type: 'count', value: unread,       tone: 'accent' } : null,
+    revenue:            overdueInv   ? { type: 'count', value: overdueInv,   tone: 'orange' } : null,
+    pipeline:           followUps    ? { type: 'count', value: followUps,    tone: 'orange' } : null,
+    projects:           lateProjects ? { type: 'count', value: lateProjects, tone: 'red' }    : null,
+    platform_checklist: platforms.length && !platformsDone ? { type: 'dot', tone: 'accent' } : null,
   };
+
+  useEffect(() => {
+    document.title = `${unread ? `(${unread}) ` : ''}${NAV_LABEL[activeNav] || 'Task OS'} · Task OS`;
+  }, [unread, activeNav]);
 
   useEffect(() => {
     // Back from Google's consent page: /?google=connected|error
     const gParam = new URLSearchParams(window.location.search).get('google');
     if (gParam) {
       window.history.replaceState(null, '', window.location.pathname);
-      if (gParam !== 'connected') alert('Google connection failed: ' + gParam);
+      if (gParam === 'connected') openSettings('google');
+      else alert('Google connection failed: ' + gParam);
     }
     refreshGoogleStatus();
 
@@ -453,65 +135,35 @@ function AppShell({ authUser, onLogout }) {
     }
     window.addEventListener('google_auth_change', onAuthChange);
 
-    // Load notifications + team
-    loadNotifications();
-    loadDbTeam();
-    const notifInterval = setInterval(loadNotifications, 30000);
+    // Team data: employees, their tasks (status/steps flow back into local tasks), notifications.
+    refreshTeam();
+    const poll = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      useTeamStore.getState().loadNotifications();
+      useTeamStore.getState().loadServerTasks();
+    }, 30000);
 
     return () => {
       window.removeEventListener('google_auth_change', onAuthChange);
-      clearInterval(notifInterval);
+      clearInterval(poll);
     };
-  }, []);
+  }, [openSettings, refreshTeam]);
 
-  // Close notification dropdown on outside click
+  // Keyboard shortcuts: Ctrl/Cmd+B sidebar, Ctrl/Cmd+J assistant.
   useEffect(() => {
-    if (!showNotifs) return;
-    const handler = (e) => {
-      if (!e.target.closest('.notif-wrap')) setShowNotifs(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showNotifs]);
-
-  async function loadNotifications() {
-    try {
-      const data = await fetchNotifications();
-      const newNotifs = data.notifications || [];
-      setNotifications(newNotifs);
-      // Auto-update task statuses in local store when employees complete tasks
-      const completedIds = newNotifs
-        .filter(n => n.type === 'task_completed' && n.task_id)
-        .map(n => n.task_id);
-      if (completedIds.length > 0) {
-        const { tasks, updateTask } = useTaskStore.getState();
-        completedIds.forEach(tid => {
-          const t = tasks.find(x => x.id === tid);
-          if (t && t.status !== 'done') updateTask(tid, { status: 'done' });
-        });
+    function onKey(e) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === 'b') { e.preventDefault(); toggleSidebar(); }
+      if (k === 'j') {
+        e.preventDefault();
+        if (isNarrow) setNarrowAiOpen(o => !o);
+        else setAiOpen(!useUiStore.getState().aiOpen);
       }
-    } catch {}
-  }
-
-  async function loadDbTeam() {
-    try {
-      const users = await fetchTeam();
-      const employees = users.filter(u => u.role === 'employee');
-      setDbTeam(employees);
-      // Sync to localStorage so TaskForm dropdown shows DB employees
-      saveTeam(employees.map(u => ({ name: u.name, email: u.email })));
-      window.dispatchEvent(new Event('team_updated'));
-    } catch {}
-  }
-
-  async function handleAddEmployee(name, email, password) {
-    try {
-      await addTeamMember(name, email, password);
-      await loadDbTeam();
-    } catch (e) {
-      alert(e.message);
     }
-  }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isNarrow, setAiOpen, toggleSidebar]);
 
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
@@ -525,161 +177,51 @@ function AppShell({ authUser, onLogout }) {
   }
 
   function handleGoogleSignOut() {
-    if (!confirm('Disconnect Google? Calendar/Tasks/Gmail sync will stop until you reconnect.')) return;
+    if (!confirm('Disconnect Google? Calendar, Tasks and Gmail sync stop until you reconnect.')) return;
     signOut();
     setGoogleUser(null);
     setGoogleConnected(false);
   }
 
-  function handleTasksParsed(tasks) {
-    setPendingTasks(tasks);
+  function handleTasksParsed(parsed) {
+    setPendingTasks(parsed);
     setShowConfirm(true);
   }
 
-  function handleNav(id) {
-    if (id === 'settings') { setShowSettings(true); return; }
-    setActiveNav(id);
-  }
+  const google = {
+    connected: googleConnected, configured: googleConfigured, user: googleUser, loading: googleLoading,
+    onConnect: handleGoogleSignIn, onDisconnect: handleGoogleSignOut,
+  };
 
   return (
-    <div className="app-shell">
+    <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
+      <Sidebar badges={badges} google={google} onLogout={onLogout} authUser={authUser} />
 
-      {/* ── Sidebar ── */}
-      <aside className={'sidebar' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
-        <div className="sidebar-top">
-          <div className="sidebar-brand">
-            <span className="brand-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 2L4 9h4l-1 5 5-7H8l1-5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg></span>
-            {!sidebarCollapsed && <span className="brand-name">Task OS</span>}
-          </div>
-          <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(c => !c)}>
-            {sidebarCollapsed ? '›' : '‹'}
-          </button>
-        </div>
-
-        <nav className="sidebar-nav">
-          {NAV_ITEMS.map(item => {
-            if (item.type === 'divider') {
-              return !sidebarCollapsed
-                ? <div key={item.id} className="nav-section-label">{item.label}</div>
-                : <div key={item.id} className="nav-divider-line" />;
-            }
-            const badge = BADGES[item.id];
-            return (
-              <button
-                key={item.id}
-                className={'nav-item' + (activeNav === item.id ? ' nav-active' : '')}
-                onClick={() => handleNav(item.id)}
-                title={sidebarCollapsed ? item.label : ''}
-              >
-                <span className="nav-icon">{item.icon}</span>
-                {!sidebarCollapsed && <span className="nav-label">{item.label}</span>}
-                {badge?.type === 'count' && (
-                  <span className={`nav-badge nav-badge-${badge.color}`}>{badge.value}</span>
-                )}
-                {badge?.type === 'dot' && (
-                  <span className={`nav-badge-dot nav-badge-dot-${badge.color}`} />
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="sidebar-bottom">
-          {googleConnected ? (
-            <div className="sidebar-user">
-              {googleUser?.picture
-                ? <img src={googleUser.picture} alt="avatar" className="sb-avatar" />
-                : <span className="sb-avatar-placeholder"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg></span>
-              }
-              {!sidebarCollapsed && (
-                <div className="sb-user-info">
-                  <span className="sb-user-name">{googleUser?.name || 'Connected'}</span>
-                  <button className="sb-signout" onClick={handleGoogleSignOut}>Sign out</button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              className={'google-connect-btn' + (sidebarCollapsed ? ' btn-icon-only' : '')}
-              onClick={() => { setShowSettings(true); }}
-              title="Connect Google Calendar + Tasks"
-            >
-              <span className="gc-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 8.5a3 3 0 0 0 4.2 0l1.8-1.8a3 3 0 0 0-4.2-4.2L6.5 3.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M8.5 5.5a3 3 0 0 0-4.2 0L2.5 7.3a3 3 0 0 0 4.2 4.2L7.5 10.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg></span>
-              {!sidebarCollapsed && <span>Connect Google</span>}
-            </button>
-          )}
-
-          {/* Logout button */}
-          <button
-            className={'sb-logout-btn' + (sidebarCollapsed ? ' sb-logout-collapsed' : '')}
-            onClick={onLogout}
-            title="Logout"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            {!sidebarCollapsed && <span>Logout</span>}
-          </button>
-        </div>
-      </aside>
-
-      {/* ── Main content ── */}
       <div className="app-main">
-        <header className="app-topbar">
-          <div className="topbar-left">
-            <WorkspaceTabs />
-          </div>
-          <div className="topbar-right">
-            {/* Notification bell */}
-            <div className="notif-wrap">
-              <button className="topbar-btn notif-btn" onClick={() => { setShowNotifs(o => !o); }}>
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1.5a4 4 0 0 1 4 4v2.5l1 1.5H1.5L2.5 8V5.5a4 4 0 0 1 4-4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M5 10.5a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.3"/></svg>
-                {notifications.filter(n => !n.is_read).length > 0 && (
-                  <span className="notif-badge">{notifications.filter(n => !n.is_read).length}</span>
-                )}
-              </button>
-              {showNotifs && (
-                <div className="notif-dropdown">
-                  <div className="notif-header">
-                    <span>Notifications</span>
-                    {notifications.some(n => !n.is_read) && (
-                      <button className="notif-mark-all" onClick={async () => {
-                        await markNotificationsRead('all');
-                        setNotifications(ns => ns.map(n => ({...n, is_read: 1})));
-                      }}>Mark all read</button>
-                    )}
-                  </div>
-                  {notifications.length === 0
-                    ? <div className="notif-empty">No notifications</div>
-                    : notifications.slice(0, 10).map(n => (
-                      <div key={n.id} className={'notif-item' + (n.is_read ? ' notif-read' : '')}
-                        onClick={async () => {
-                          await markNotificationsRead(n.id);
-                          setNotifications(ns => ns.map(x => x.id === n.id ? {...x, is_read: 1} : x));
-                        }}>
-                        <div className="notif-msg">{n.message}</div>
-                        <div className="notif-time">{new Date(n.created_at).toLocaleString()}</div>
-                      </div>
-                    ))
-                  }
-                </div>
-              )}
-            </div>
-            <button
-              className={'topbar-btn' + (chatOpen ? ' topbar-btn-active' : '')}
-              onClick={() => setChatOpen(o => !o)}
-            >
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="5" r="4" stroke="currentColor" strokeWidth="1.3"/><path d="M4 5h5M4 7h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M6.5 9v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> AI Chat
-            </button>
-          </div>
-        </header>
+        <Topbar aiOpen={showAi} onToggleAi={() => setShowAi(!showAi)} />
 
-        <div className={'app-body' + (chatOpen ? ' app-body-split' : '')}>
-          <div className="content-area">
-            <Dashboard activeNav={activeNav} />
-          </div>
-          {chatOpen && (
-            <div className="chat-panel-wrap">
-              <Chat onTasksParsed={handleTasksParsed} />
+        <div className="app-body">
+          <main className="content" id="main">
+            <div className="content-inner">
+              <Dashboard activeNav={activeNav} />
             </div>
+          </main>
+
+          {showAi ? (
+            <>
+              {isNarrow && <div className="scrim scrim-ai" onClick={() => setShowAi(false)} />}
+              <aside className={'ai-panel' + (isNarrow ? ' is-overlay' : '')} aria-label="AI assistant">
+                <Chat onTasksParsed={handleTasksParsed} onCollapse={() => setShowAi(false)} />
+              </aside>
+            </>
+          ) : !isNarrow && (
+            <aside className="ai-rail" aria-label="AI assistant (collapsed)">
+              <button className="ai-rail-btn" onClick={() => setShowAi(true)} title="Open AI assistant (Ctrl+J)">
+                <Icon name="chevronsLeft" size={16} />
+                <Icon name="sparkles" size={16} />
+                <span className="ai-rail-label">AI assistant</span>
+              </button>
+            </aside>
           )}
         </div>
       </div>
@@ -688,20 +230,7 @@ function AppShell({ authUser, onLogout }) {
         <ConfirmScreen onDone={() => setShowConfirm(false)} />
       )}
 
-      {showSettings && (
-        <SettingsModal
-          onClose={() => setShowSettings(false)}
-          googleConnected={googleConnected}
-          googleConfigured={googleConfigured}
-          googleUser={googleUser}
-          googleLoading={googleLoading}
-          onGoogleConnect={handleGoogleSignIn}
-          onGoogleDisconnect={handleGoogleSignOut}
-          onLogout={onLogout}
-          dbTeam={dbTeam}
-          onAddEmployee={handleAddEmployee}
-        />
-      )}
+      {settingsTab && <SettingsModal google={google} onLogout={onLogout} />}
     </div>
   );
 }

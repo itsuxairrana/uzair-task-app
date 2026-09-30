@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { getStoredKey } from '../../services/aiRouter';
+import { localISO } from '../../utils/date';
 
 const DAILY_THEME = {
   1: { label: 'Outreach day',          sub: 'Reddit + Discord + LinkedIn connections + Behance',  tasks: [{ label: 'Post [FOR HIRE] on Reddit', badge: 'reddit' }, { label: 'Send helpful message in Discord', badge: 'discord' }, { label: 'Send 10 LinkedIn connections', badge: 'linkedin' }, { label: 'Update Behance case study', badge: 'behance' }] },
   2: { label: 'Content day',           sub: 'LinkedIn post #1 + Instagram + client work',        tasks: [{ label: 'Publish LinkedIn post #1', badge: 'linkedin' }, { label: 'Post Instagram Story', badge: 'instagram' }, { label: 'Work on active client project', badge: 'client' }, { label: 'Reply to all DMs & comments', badge: 'social' }] },
   3: { label: 'Portfolio + Discovery', sub: 'Dribbble + research + Discord',                     tasks: [{ label: 'Post/comment on Dribbble', badge: 'dribbble' }, { label: 'Research 3 new prospects', badge: 'outreach' }, { label: 'Post in Discord community', badge: 'discord' }, { label: 'Review analytics', badge: 'review' }] },
-  4: { label: 'Content + Learning',    sub: 'LinkedIn post #2 + 90 min learning block',          tasks: [{ label: 'Publish LinkedIn post #2', badge: 'linkedin' }, { label: '90 min learning block', badge: 'learning' }, { label: 'Follow up on open proposals', badge: 'clients' }, { label: 'Check Upwork messages', badge: 'upwork' }] },
+  4: { label: 'Content + Learning',    sub: 'LinkedIn post #2 + 90 min learning block',          tasks: [{ label: 'Publish LinkedIn post #2', badge: 'linkedin' }, { label: '90 min learning block', badge: 'learning' }, { label: 'Follow up on open proposals', badge: 'clients' }, { label: 'Reply to inbound leads & DMs', badge: 'clients' }] },
   5: { label: 'Publishing day',        sub: 'LinkedIn post #3 + Blog post + Pinterest',          tasks: [{ label: 'Publish LinkedIn post #3', badge: 'linkedin' }, { label: 'Publish blog post', badge: 'blog' }, { label: 'Post 3 Pinterest pins', badge: 'pinterest' }, { label: 'Weekly invoice check', badge: 'finance' }] },
   6: { label: 'Deep work',             sub: 'Client delivery only, no social',                   tasks: [{ label: 'Deliver active client work', badge: 'client' }, { label: 'No social media today', badge: 'focus' }, { label: 'Review project feedback', badge: 'review' }, { label: "Plan next week's content", badge: 'plan' }] },
   0: { label: 'Planning day',          sub: 'Cowork workers + Weekly Review + load calendar',    tasks: [{ label: 'Brief Cowork workers', badge: 'team' }, { label: 'Complete Weekly Review', badge: 'review' }, { label: 'Load content calendar', badge: 'content' }, { label: 'Set top 3 goals for Monday', badge: 'plan' }] },
@@ -13,10 +14,10 @@ const DAILY_THEME = {
 
 const BADGE_COLOR = {
   reddit:'#FF4500', discord:'#5865F2', linkedin:'#0A66C2', behance:'#1769FF',
-  instagram:'#E1306C', client:'#16a34a', social:'#64748b', dribbble:'#EA4C89',
+  instagram:'#E1306C', client:'var(--green)', social:'var(--text-2)', dribbble:'#EA4C89',
   outreach:'#f97316', review:'#7c3aed', learning:'#0891b2', clients:'#14b8a6',
-  upwork:'#14A800', blog:'#8b5cf6', pinterest:'#E60023', finance:'#d97706',
-  focus:'#475569', plan:'#0057B8', team:'#f97316', content:'#0A66C2',
+  blog:'#8b5cf6', pinterest:'#E60023', finance:'var(--amber)',
+  focus:'var(--text-2)', plan:'var(--accent)', team:'#f97316', content:'#0A66C2',
 };
 
 const THEME_KEY_PREFIX = 'uzair_daily_theme_checks_';
@@ -30,7 +31,7 @@ function loadCustomTasks() {
 
 export default function DailyTasks() {
   const today = new Date();
-  const todayISO = today.toISOString().split('T')[0];
+  const todayISO = localISO(today);
   const todayDOW = today.getDay();
   const theme = DAILY_THEME[todayDOW];
   const themeKey = THEME_KEY_PREFIX + todayISO;
@@ -123,7 +124,7 @@ export default function DailyTasks() {
       <div className="agency-page-header">
         <div>
           <div className="agency-page-title">Daily Tasks</div>
-          <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{theme.label} — {theme.sub}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>{theme.label} — {theme.sub}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span className="agency-badge agency-badge-blue">{themeDone}/{theme.tasks.length} done</span>
@@ -137,25 +138,25 @@ export default function DailyTasks() {
 
         <div style={{ marginBottom: 12 }}>
           {theme.tasks.map((task, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < theme.tasks.length - 1 ? '1px solid #f8fafc' : 'none' }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < theme.tasks.length - 1 ? '1px solid var(--surface-2)' : 'none' }}>
               <button
                 onClick={() => toggleCheck(i)}
                 style={{
                   width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
-                  border: `1.5px solid ${themeChecks[i] ? '#22c55e' : '#cbd5e1'}`,
-                  background: themeChecks[i] ? '#22c55e' : 'transparent',
+                  border: `1.5px solid ${themeChecks[i] ? 'var(--green)' : 'var(--border-strong)'}`,
+                  background: themeChecks[i] ? 'var(--green)' : 'transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
                 }}
               >
                 {themeChecks[i] && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
               </button>
-              <span style={{ flex: 1, fontSize: 13, color: themeChecks[i] ? '#94a3b8' : '#334155', textDecoration: themeChecks[i] ? 'line-through' : 'none' }}>
+              <span style={{ flex: 1, fontSize: 13, color: themeChecks[i] ? 'var(--text-3)' : 'var(--text)', textDecoration: themeChecks[i] ? 'line-through' : 'none' }}>
                 {task.label}
               </span>
               <span style={{
                 fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 99,
-                background: (BADGE_COLOR[task.badge] || '#94a3b8') + '18',
-                color: BADGE_COLOR[task.badge] || '#94a3b8',
+                background: `color-mix(in srgb, ${BADGE_COLOR[task.badge] || 'var(--text-3)'} 12%, transparent)`,
+                color: BADGE_COLOR[task.badge] || 'var(--text-3)',
               }}>
                 {task.badge}
               </span>
@@ -163,8 +164,8 @@ export default function DailyTasks() {
           ))}
         </div>
 
-        <div style={{ background: '#f1f5f9', borderRadius: 99, height: 6, overflow: 'hidden' }}>
-          <div style={{ height: '100%', background: themeDone === theme.tasks.length ? '#22c55e' : '#0057B8', width: `${Math.round((themeDone / theme.tasks.length) * 100)}%`, borderRadius: 99, transition: 'width .3s' }} />
+        <div style={{ background: 'var(--surface-2)', borderRadius: 99, height: 6, overflow: 'hidden' }}>
+          <div style={{ height: '100%', background: themeDone === theme.tasks.length ? 'var(--green)' : 'var(--accent)', width: `${Math.round((themeDone / theme.tasks.length) * 100)}%`, borderRadius: 99, transition: 'width .3s' }} />
         </div>
       </div>
 
@@ -173,18 +174,18 @@ export default function DailyTasks() {
         <div className="morning-section-label" style={{ marginBottom: 10 }}>Always-do tasks</div>
 
         {customTasks.length === 0 ? (
-          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>No custom tasks yet — add recurring habits below</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>No custom tasks yet — add recurring habits below</div>
         ) : (
           <div style={{ marginBottom: 12 }}>
             {customTasks.map(t => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderBottom: '1px solid #f8fafc' }}>
+              <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--surface-2)' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: '#334155', fontWeight: 500 }}>{t.title}</div>
-                  {t.note && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{t.note}</div>}
+                  <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{t.title}</div>
+                  {t.note && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{t.note}</div>}
                 </div>
                 <button
                   onClick={() => deleteCustomTask(t.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', fontSize: 14, padding: '0 2px', flexShrink: 0 }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--border-strong)', fontSize: 14, padding: '0 2px', flexShrink: 0 }}
                 >✕</button>
               </div>
             ))}
@@ -215,21 +216,21 @@ export default function DailyTasks() {
         <div className="morning-section-label" style={{ marginBottom: 10 }}>AI task helper</div>
 
         {!claudeKey ? (
-          <div style={{ fontSize: 13, color: '#94a3b8', padding: '8px 0' }}>
+          <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '8px 0' }}>
             Add your Claude API key in Settings to use AI task help
           </div>
         ) : (
           <>
             <div style={{ minHeight: 120, maxHeight: 260, overflowY: 'auto', marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {messages.length === 0 && (
-                <div style={{ fontSize: 12, color: '#94a3b8', padding: '8px 0' }}>Ask Claude to help with any task — be specific for best results</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', padding: '8px 0' }}>Ask Claude to help with any task — be specific for best results</div>
               )}
               {messages.map((m, i) => (
                 <div key={i} style={{
                   alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
                   maxWidth: '85%', fontSize: 13, lineHeight: 1.5,
-                  background: m.role === 'user' ? '#0057B8' : '#f1f5f9',
-                  color: m.role === 'user' ? '#fff' : '#334155',
+                  background: m.role === 'user' ? 'var(--accent)' : 'var(--surface-2)',
+                  color: m.role === 'user' ? 'var(--on-accent)' : 'var(--text)',
                   borderRadius: m.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                   padding: '8px 12px',
                   whiteSpace: 'pre-wrap',
@@ -238,7 +239,7 @@ export default function DailyTasks() {
                 </div>
               ))}
               {chatLoading && (
-                <div style={{ alignSelf: 'flex-start', fontSize: 12, color: '#94a3b8', padding: '6px 0' }}>Thinking…</div>
+                <div style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--text-3)', padding: '6px 0' }}>Thinking…</div>
               )}
               <div ref={chatEndRef} />
             </div>
