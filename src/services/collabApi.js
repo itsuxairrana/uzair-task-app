@@ -26,3 +26,8 @@ export const setRoutineCheck = (routineId, day, done) => call('PUT', '/routines/
 export const fetchComments = taskId => call('GET', `/comments?task_id=${encodeURIComponent(taskId)}`).then(d => d.comments);
 export const postComment   = (taskId, body) => call('POST', '/comments', { task_id: taskId, body });
 export const deleteComment = id => call('DELETE', `/comments?id=${id}`);
+
+// ── Attendance ──
+export const attendancePing    = () => call('POST', '/attendance/ping');
+export const attendanceSignout = () => call('POST', '/attendance/signout');
+export const fetchAttendance   = (from, to = from) => call('GET', `/attendance?from=${from}&to=${to}`).then(d => d.sessions || []);

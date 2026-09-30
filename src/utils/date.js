@@ -53,3 +53,26 @@ export function daysLabel(days) {
   if (d === '06') return 'Weekends';
   return WEEK_ORDER.filter(n => d.includes(String(n))).map(n => WEEKDAY_SHORT[n]).join(', ');
 }
+
+// ── 12-hour clock ──
+/** "14:30" → "2:30 PM" (task due times are stored as 24-hour HH:MM). */
+export function fmtTime12(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
+  if (!m) return '';
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/** A server timestamp (ISO, or D1's "YYYY-MM-DD HH:MM:SS" in UTC) → "9:05 AM" in local time. */
+export function fmtClock(ts) {
+  if (!ts) return '';
+  const t = typeof ts === 'string' && !ts.includes('T') ? ts.replace(' ', 'T') + 'Z' : ts;
+  return new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+/** 27_000_000 → "7h 30m". */
+export function fmtDuration(ms) {
+  const mins = Math.max(0, Math.round(ms / 60000));
+  const h = Math.floor(mins / 60);
+  return h ? `${h}h ${String(mins % 60).padStart(2, '0')}m` : `${mins}m`;
+}

@@ -5,6 +5,7 @@
  */
 
 import { getAccessToken } from './googleAuth';
+import { fmtTime12 } from '../utils/date';
 
 const TEAM_KEY = 'uzair_team';
 
@@ -101,7 +102,7 @@ function buildTaskEmailHtml(task, recipientName) {
     </tr>`).join('');
 
   const dueLine = task.due_date
-    ? `<span style="background:#f0f3f7;color:#1a2332;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:600;">Due ${task.due_date}${task.due_time ? ' · ' + task.due_time : ''}</span>`
+    ? `<span style="background:#f0f3f7;color:#1a2332;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:600;">Due ${task.due_date}${task.due_time ? ' · ' + fmtTime12(task.due_time) : ''}</span>`
     : '';
 
   return `<!DOCTYPE html>

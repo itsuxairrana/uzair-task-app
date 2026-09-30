@@ -18,7 +18,7 @@ function CardHead({ title, sub, to, label = 'View all', right }) {
     </div>
   );
 }
-import { localISO, addDaysISO, appliesOn } from '../../utils/date';
+import { localISO, addDaysISO, appliesOn, fmtClock } from '../../utils/date';
 
 const EMPTY_PLATFORM = { id: '', name: '', color: '#0e76b3', tasks: '' };
 
@@ -46,7 +46,7 @@ function fmtDate(d) {
 }
 
 function fmtTime(d) {
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 const PRI_COLOR = { high: 'var(--red)', medium: 'var(--amber)', low: 'var(--green)' };
@@ -434,6 +434,7 @@ function TeamSnapshot() {
   const notifications = useTeamStore(s => s.notifications);
   const routines = useTeamStore(s => s.routines);
   const routineChecks = useTeamStore(s => s.routineChecks);
+  const attendance = useTeamStore(s => s.attendance);
   const navigate = useUiStore(s => s.navigate);
   if (!employees.length) return null;
   const today = localISO();
@@ -450,8 +451,17 @@ function TeamSnapshot() {
           const done = routineChecks.filter(c => c.user_id === e.id && c.day === today && items.some(r => r.id === c.routine_id)).length;
           return (
             <span key={e.id} className="team-snapshot-person">
-              <span className={`avatar avatar-sm avatar-c${i % 6}`}>{e.name.charAt(0).toUpperCase()}</span>
+              <span className="avatar-wrap">
+                <span className={`avatar avatar-sm avatar-c${i % 6}`}>{e.name.charAt(0).toUpperCase()}</span>
+                {attendance.some(a => a.user_id === e.id && a.online) && <span className="online-dot" title="Online now" />}
+              </span>
               {e.name} <span className="muted-small">{mine.length} open</span>
+              {(() => {
+                const first = attendance.filter(a => a.user_id === e.id).sort((a, b) => a.check_in.localeCompare(b.check_in))[0];
+                return first
+                  ? <span className="muted-small">· in {fmtClock(first.check_in)}</span>
+                  : <span className="muted-small">· not in yet</span>;
+              })()}
               {items.length > 0 && (
                 <button className={'chip chip-sm' + (done === items.length ? ' chip-green' : '')} onClick={() => navigate('team', { view: 'routine', userId: e.id })} title="Daily routine today">
                   <Icon name="repeat" size={11} /> {done}/{items.length}

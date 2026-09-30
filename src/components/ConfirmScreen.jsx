@@ -4,6 +4,7 @@ import { isSignedIn } from '../services/googleAuth';
 import { pushTasksToCalendar } from '../services/calendarApi';
 import { pushTasksToGoogleTasks } from '../services/tasksApi';
 import { getTeam } from '../services/gmailApi';
+import TimeInput from './TimeInput';
 
 export default function ConfirmScreen({ onDone }) {
   const { pendingTasks, updatePendingTask, removePendingTask, confirmPendingTasks, discardPendingTasks, setGoogleIds } = useTaskStore();
@@ -114,11 +115,7 @@ export default function ConfirmScreen({ onDone }) {
                     value={task.due_date}
                     onChange={e => updatePendingTask(task.id, { due_date: e.target.value })}
                   />
-                  <input
-                    type="time"
-                    value={task.due_time}
-                    onChange={e => updatePendingTask(task.id, { due_time: e.target.value })}
-                  />
+                  <TimeInput size="sm" value={task.due_time} onChange={v => updatePendingTask(task.id, { due_time: v })} />
                   <select
                     value={task.assigned_to}
                     onChange={e => updatePendingTask(task.id, { assigned_to: e.target.value })}

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchMyTasks, updateTaskStatus, updateMilestone, fetchNotifications, markNotificationsRead } from '../services/taskSyncApi';
-import { fetchRoutines, setRoutineCheck } from '../services/collabApi';
+import { fetchRoutines, setRoutineCheck, attendancePing, attendanceSignout, fetchAttendance } from '../services/collabApi';
 import { useUiStore } from '../store/uiStore';
-import { localISO, daysUntil, fmtShortDate, timeAgo } from '../utils/date';
+import { localISO, daysUntil, fmtShortDate, timeAgo, fmtTime12, fmtClock } from '../utils/date';
 import NotificationsMenu from './NotificationsMenu';
 import TaskThread from './TaskThread';
 import CheckItem from './CheckItem';
@@ -25,6 +25,7 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
   const [finishing, setFinishing] = useState(null); // task being marked done
   const taskRefs = useRef({});
   const notifRef = useRef([]); // latest list, for comparisons outside render
+  const [checkedInAt, setCheckedInAt] = useState(null);
   const theme = useUiStore(s => s.theme);
   const setTheme = useUiStore(s => s.setTheme);
 
@@ -62,6 +63,24 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
     const t2 = setInterval(() => { if (document.visibilityState === 'visible') load({ quiet: true }); }, 90000);
     return () => { clearInterval(t); clearInterval(t2); };
   }, [load, loadNotifications]);
+
+  // Attendance: this keeps the session open while the app is running; closing it ends the session.
+  useEffect(() => {
+    const beat = () => attendancePing()
+      .then(() => fetchAttendance(localISO()))
+      .then(rows => { if (rows.length) setCheckedInAt(rows[0].check_in); }) // sorted by check-in, so [0] is today's first
+      .catch(() => {});
+    beat();
+    const t = setInterval(beat, 5 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === 'visible') beat(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
+
+  async function signOut() {
+    await attendanceSignout().catch(() => {});
+    onLogout();
+  }
 
   useEffect(() => {
     document.title = `${notifications.some(n => !Number(n.is_read)) ? `(${notifications.filter(n => !Number(n.is_read)).length}) ` : ''}My work · Task OS`;
@@ -160,14 +179,17 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
           </button>
           <span className="emp-username">{authUser?.name}</span>
-          <button className="btn btn-secondary btn-sm" onClick={onLogout}><Icon name="logout" size={14} /> Sign out</button>
+          <button className="btn btn-secondary btn-sm" onClick={signOut} title="Signing out also checks you out"><Icon name="logout" size={14} /> Sign out</button>
         </div>
       </header>
 
       <main className="emp-main">
         <div className="emp-hero">
           <h1 className="page-heading">Hi, {authUser?.name?.split(' ')[0]}</h1>
-          <p className="muted-text">{parseToday()}</p>
+          <p className="muted-text">
+            {parseToday()}
+            {checkedInAt && <span className="checked-in"><span className="online-dot online-dot-inline" /> Checked in at {fmtClock(checkedInAt)}</span>}
+          </p>
         </div>
 
         <DailyRoutine />
@@ -222,7 +244,7 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
                           <span className={'meta' + (overdue ? ' text-red' : days === 0 && task.status !== 'done' ? ' text-accent' : '')}>
                             <Icon name="calendar" size={12} />
                             {overdue ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `Due ${fmtShortDate(task.due_date)}`}
-                            {task.due_time ? ` · ${task.due_time}` : ''}
+                            {task.due_time ? ` · ${fmtTime12(task.due_time)}` : ''}
                           </span>
                         )}
                         {task.client_tag && <span className="chip chip-sm">{task.client_tag}</span>}

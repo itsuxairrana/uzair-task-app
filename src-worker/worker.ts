@@ -52,6 +52,8 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
   await env.DB.prepare("DELETE FROM login_attempts WHERE ip=?").bind(ip).run();
 
   const token = await createJWT(env.JWT_SECRET, Number(user.id), String(user.name), String(user.email), String(user.role));
+  // Attendance must never block signing in.
+  if (user.role === "employee") await attendancePing(env, Number(user.id)).catch((e) => console.error("[uv-tasks] attendance check-in failed:", e));
   return json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
 }
 
@@ -525,6 +527,62 @@ async function handleGoogle(req: Request, env: Env, auth: JwtPayload, url: URL):
 }
 
 // ── Router ───────────────────────────────────────────────────────────────────
+// ── /api/attendance — check-in/out from app usage ─────────────────────────────
+// A session starts when an employee signs in or opens the app, stays open while the app pings
+// (every few minutes), and ends on Sign out — or, if they just close it, at the last ping.
+const IDLE_MS = 20 * 60 * 1000; // no ping for this long = the session ended at the last ping
+
+async function attendancePing(env: Env, userId: number) {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const day = todayIn(TIME_ZONE);
+  const open = await first(env, "SELECT id, day, last_seen FROM attendance WHERE user_id=? AND check_out IS NULL ORDER BY id DESC LIMIT 1", userId);
+  if (open && open.day === day && now.getTime() - Date.parse(String(open.last_seen)) < IDLE_MS) {
+    await env.DB.prepare("UPDATE attendance SET last_seen=? WHERE id=?").bind(nowIso, open.id).run();
+    return;
+  }
+  // Close anything left open (closed tab, sleep, or yesterday's session) at its last sign of life.
+  await env.DB.prepare("UPDATE attendance SET check_out=MAX(last_seen, check_in), checkout_kind='auto' WHERE user_id=? AND check_out IS NULL").bind(userId).run();
+  await env.DB.prepare("INSERT INTO attendance (user_id, day, check_in, last_seen) VALUES (?,?,?,?)").bind(userId, day, nowIso, nowIso).run();
+}
+
+async function handleAttendance(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
+  const route = url.pathname.slice("/api/attendance".length);
+  const isAdmin = auth.role === "admin";
+
+  if (req.method === "POST" && route === "/ping") {
+    if (!isAdmin) await attendancePing(env, auth.sub);
+    return json({ ok: true });
+  }
+
+  if (req.method === "POST" && route === "/signout") {
+    if (!isAdmin) {
+      const nowIso = new Date().toISOString();
+      await env.DB.prepare("UPDATE attendance SET check_out=?, last_seen=?, checkout_kind='signout' WHERE user_id=? AND check_out IS NULL").bind(nowIso, nowIso, auth.sub).run();
+    }
+    return json({ ok: true });
+  }
+
+  if (req.method === "GET" && route === "") {
+    const from = url.searchParams.get("from") ?? "";
+    const to = url.searchParams.get("to") ?? from;
+    if (!DAY_RE.test(from) || !DAY_RE.test(to)) return errResp("from/to must be YYYY-MM-DD");
+    const rows = isAdmin
+      ? await all(env, "SELECT a.*, u.name AS user_name FROM attendance a JOIN users u ON u.id=a.user_id WHERE a.day BETWEEN ? AND ? ORDER BY a.day DESC, a.check_in ASC", from, to)
+      : await all(env, "SELECT a.*, ? AS user_name FROM attendance a WHERE a.user_id=? AND a.day BETWEEN ? AND ? ORDER BY a.day DESC, a.check_in ASC", auth.name, auth.sub, from, to);
+    const now = Date.now();
+    // Sessions without a check-out are either live or were abandoned (closed at their last ping).
+    for (const r of rows) {
+      const live = !r.check_out && now - Date.parse(String(r.last_seen)) < IDLE_MS;
+      r.online = live;
+      r.effective_out = r.check_out ?? (live ? null : String(r.last_seen) > String(r.check_in) ? r.last_seen : r.check_in);
+    }
+    return json({ sessions: rows, idle_minutes: IDLE_MS / 60000 });
+  }
+
+  return errResp("Not found", 404);
+}
+
 // ── Evening routine check (cron, see wrangler.jsonc triggers) ────────────────
 // Remind employees with unfinished routine items and tell the admins who's behind. Once per person per day.
 async function eveningRoutineCheck(env: Env) {
@@ -577,6 +635,7 @@ export default {
           else if (url.pathname.startsWith("/api/google/")) res = await handleGoogle(req, env, auth, url);
           else if (url.pathname === "/api/routines" || url.pathname.startsWith("/api/routines/")) res = await handleRoutines(req, env, auth, url);
           else if (url.pathname === "/api/comments") res = await handleComments(req, env, auth, url);
+          else if (url.pathname === "/api/attendance" || url.pathname.startsWith("/api/attendance/")) res = await handleAttendance(req, env, auth, url);
           else res = errResp("Not found", 404);
         }
         for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useTaskStore, isEmployee } from '../store/taskStore';
 import { getTeam } from '../services/gmailApi';
 import Icon from './Icon';
+import TimeInput from './TimeInput';
 
 const EMPTY = {
   title: '',
@@ -127,10 +128,10 @@ export default function TaskForm({ task, defaults, onClose }) {
               <span className="field-label">Due date</span>
               <input className="input" type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} />
             </label>
-            <label className="field">
+            <div className="field" role="group" aria-label="Time">
               <span className="field-label">Time</span>
-              <input className="input" type="time" value={form.due_time} onChange={e => set('due_time', e.target.value)} />
-            </label>
+              <TimeInput value={form.due_time} onChange={v => set('due_time', v)} />
+            </div>
             <label className="field">
               <span className="field-label">Assign to</span>
               <select className="select" value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)}>

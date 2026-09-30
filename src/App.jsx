@@ -142,6 +142,7 @@ function AppShell({ authUser, onLogout }) {
       useTeamStore.getState().loadNotifications();
       useTeamStore.getState().loadServerTasks();
       useTeamStore.getState().loadRoutines();
+      useTeamStore.getState().loadAttendance();
     }, 30000);
 
     return () => {

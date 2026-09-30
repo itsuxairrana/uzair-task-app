@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTeamStore } from '../../store/teamStore';
 import { addRoutine, updateRoutine, removeRoutine } from '../../services/collabApi';
-import { localISO, addDaysISO, parseISO, appliesOn, daysLabel, ALL_DAYS, WEEKDAY_SHORT, WEEK_ORDER } from '../../utils/date';
+import { localISO, addDaysISO, parseISO, appliesOn, daysLabel, fmtClock, ALL_DAYS, WEEKDAY_SHORT, WEEK_ORDER } from '../../utils/date';
 import Icon from '../Icon';
 
 // Admin view of every employee's daily routine: today's progress, last 7 days, and editing.
@@ -169,7 +169,7 @@ function RoutineCard({ employee, colorIdx, items, checks, dayFilter, highlighted
                 ) : (
                   <button className="routine-item-title" onClick={() => setEditing({ id: r.id, title: r.title })} title="Click to rename">{r.title}</button>
                 )}
-                {doneAt && isToday && <span className="muted-small">{new Date(doneAt.replace(' ', 'T') + 'Z').toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>}
+                {doneAt && isToday && <span className="muted-small">{fmtClock(doneAt)}</span>}
                 <button className={'days-chip' + (picking === r.id ? ' is-open' : '')} onClick={() => setPicking(p => (p === r.id ? null : r.id))} title="Which days this runs">
                   <Icon name="calendar" size={11} /> {daysLabel(r.days)}
                 </button>

@@ -4,7 +4,7 @@ import { isSignedIn, signIn } from '../services/googleAuth';
 import { pushTaskToCalendar, deleteCalendarEvent } from '../services/calendarApi';
 import { pushTaskToGoogleTasks, deleteGoogleTask } from '../services/tasksApi';
 import { sendTaskEmail, getEmployeeEmail } from '../services/gmailApi';
-import { localISO, daysUntil, fmtShortDate } from '../utils/date';
+import { localISO, daysUntil, fmtShortDate, fmtTime12 } from '../utils/date';
 import { useTeamStore } from '../store/teamStore';
 import { getUser } from '../services/authApi';
 import TaskThread from './TaskThread';
@@ -133,7 +133,7 @@ export default function TaskCard({ task, onEdit }) {
               <span className={'meta' + (isOverdue ? ' text-red' : isToday ? ' text-accent' : '')}>
                 <Icon name="calendar" size={12} />
                 {isOverdue ? `${Math.abs(days)}d overdue` : isToday ? 'Today' : days === 1 ? 'Tomorrow' : fmtShortDate(task.due_date)}
-                {task.due_time ? ` · ${task.due_time}` : ''}
+                {task.due_time ? ` · ${fmtTime12(task.due_time)}` : ''}
               </span>
             )}
             {task.assigned_to && task.assigned_to !== 'Uzair' && (

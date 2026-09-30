@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { fetchTeam, addTeamMember, removeTeamMember } from '../services/authApi';
 import { fetchDbTasks, fetchNotifications, markNotificationsRead } from '../services/taskSyncApi';
 import { saveTeam } from '../services/gmailApi';
-import { fetchRoutines } from '../services/collabApi';
+import { fetchRoutines, fetchAttendance } from '../services/collabApi';
 import { localISO, addDaysISO } from '../utils/date';
 import { useTaskStore } from './taskStore';
 
@@ -16,6 +16,7 @@ export const useTeamStore = create((set, get) => ({
   notifications: [],
   routines: [],       // active daily-routine items for every employee
   routineChecks: [],  // { routine_id, day, done_at, user_id } for the last 7 days
+  attendance: [],     // today's attendance sessions for every employee
   loaded: false,
   error: '',
 
@@ -65,8 +66,14 @@ export const useTeamStore = create((set, get) => ({
     } catch { /* keep the last known routine state */ }
   },
 
+  async loadAttendance() {
+    try {
+      set({ attendance: await fetchAttendance(localISO()) });
+    } catch { /* keep the last known attendance */ }
+  },
+
   async refreshAll() {
-    await Promise.all([get().loadEmployees(), get().loadServerTasks(), get().loadNotifications(), get().loadRoutines()]);
+    await Promise.all([get().loadEmployees(), get().loadServerTasks(), get().loadNotifications(), get().loadRoutines(), get().loadAttendance()]);
   },
 
   async markRead(id = 'all') {

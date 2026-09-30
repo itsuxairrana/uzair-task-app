@@ -9,6 +9,7 @@ import { getUser } from '../../services/authApi';
 import TaskForm from '../TaskForm';
 import TaskThread from '../TaskThread';
 import RoutineBoard from './RoutineBoard';
+import AttendanceBoard from './AttendanceBoard';
 import Icon from '../Icon';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
@@ -33,7 +34,8 @@ export default function TeamPage() {
   const [form, setForm]           = useState(null);  // { task } | { defaults }
   const [highlight, setHighlight] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [view, setView]           = useState('tasks'); // 'tasks' | 'routine'
+  const [view, setView]           = useState('tasks'); // 'tasks' | 'routine' | 'attendance'
+  const attendance = useTeamStore(s => s.attendance);
   const [routineFocus, setRoutineFocus] = useState(null);
   const [threadId, setThreadId]   = useState(null);
   const rowRefs = useRef({});
@@ -160,6 +162,9 @@ export default function TeamPage() {
           <button className={'segmented-opt' + (view === 'routine' ? ' is-active' : '')} onClick={() => setView('routine')}>
             <Icon name="repeat" size={15} /> Daily routine
           </button>
+          <button className={'segmented-opt' + (view === 'attendance' ? ' is-active' : '')} onClick={() => setView('attendance')}>
+            <Icon name="clock" size={15} /> Attendance
+          </button>
         </div>
         <div className="page-actions-btns">
           <button className="btn btn-ghost btn-icon" onClick={refresh} title="Refresh" aria-label="Refresh" disabled={refreshing}>
@@ -188,7 +193,10 @@ export default function TeamPage() {
           const s = statsFor(e.name);
           return (
             <button key={e.id} className={'member-card' + (member === e.name && view === 'tasks' ? ' is-active' : '')} onClick={() => { setMember(e.name); if (view === 'routine') setRoutineFocus(e.id); }}>
-              <span className={`avatar avatar-c${i % 6}`}>{e.name.charAt(0).toUpperCase()}</span>
+              <span className="avatar-wrap">
+                <span className={`avatar avatar-c${i % 6}`}>{e.name.charAt(0).toUpperCase()}</span>
+                {attendance.some(a => a.user_id === e.id && a.online) && <span className="online-dot" title="Online now" />}
+              </span>
               <span className="member-card-body">
                 <span className="member-card-name">{e.name}</span>
                 <span className="member-card-meta">
@@ -207,7 +215,9 @@ export default function TeamPage() {
         })}
       </div>
 
-      {view === 'routine' ? (
+      {view === 'attendance' ? (
+        <AttendanceBoard />
+      ) : view === 'routine' ? (
         <>
           <p className="page-lede">Each employee gets this checklist fresh every day. You're notified when someone finishes theirs. Click an item to rename it.</p>
           <RoutineBoard key={routineFocus || 'all'} focusUserId={routineFocus} />
