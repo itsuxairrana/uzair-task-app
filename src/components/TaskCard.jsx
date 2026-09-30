@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTaskStore, isEmployee } from '../store/taskStore';
 import { isSignedIn, signIn } from '../services/googleAuth';
 import { pushTaskToCalendar, deleteCalendarEvent } from '../services/calendarApi';
 import { pushTaskToGoogleTasks, deleteGoogleTask } from '../services/tasksApi';
 import { sendTaskEmail, getEmployeeEmail } from '../services/gmailApi';
 import { localISO, daysUntil, fmtShortDate } from '../utils/date';
+import { useTeamStore } from '../store/teamStore';
+import { getUser } from '../services/authApi';
+import TaskThread from './TaskThread';
 import Icon from './Icon';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
@@ -28,6 +31,16 @@ export default function TaskCard({ task, onEdit }) {
   const [msg, setMsg]             = useState('');
   const [google, setGoogle]       = useState(isSignedIn());
   const [employeeEmail, setEmployeeEmail] = useState(() => getEmployeeEmail(task.assigned_to));
+  const [threadOpen, setThreadOpen] = useState(false);
+  const serverCopy = useTeamStore(s => s.serverTasks.find(t => t.id === task.id));
+  const msgCount = Number(serverCopy?.comment_count) || 0;
+  const unreadMsgs = useTeamStore(s => s.notifications.some(n => n.type === 'comment' && n.task_id === task.id && !Number(n.is_read)));
+  const closeThread = useCallback(() => setThreadOpen(false), []);
+  const markThreadSeen = useCallback(taskId => {
+    const { notifications, markRead } = useTeamStore.getState();
+    notifications.filter(n => n.type === 'comment' && n.task_id === taskId && !Number(n.is_read)).forEach(n => markRead(n.id));
+  }, []);
+  const reloadServer = useCallback(() => useTeamStore.getState().loadServerTasks(), []);
 
   useEffect(() => {
     const refresh = () => setEmployeeEmail(getEmployeeEmail(task.assigned_to));
@@ -138,7 +151,12 @@ export default function TaskCard({ task, onEdit }) {
           </div>
         </div>
 
-        <div className="task-actions">
+        <div className={'task-actions' + (unreadMsgs ? ' task-actions-visible' : '')}>
+          {forEmployee && (
+            <button className={'btn btn-ghost btn-sm thread-btn' + (msgCount ? ' has-count' : '') + (unreadMsgs ? ' is-unread' : '')} onClick={() => setThreadOpen(true)} title={`Conversation with ${task.assigned_to}`} aria-label="Conversation">
+              <Icon name="message" size={15} />{msgCount > 0 && <span>{msgCount}</span>}
+            </button>
+          )}
           {forEmployee && (
             <button className="btn btn-ghost btn-icon btn-sm" onClick={handleNotify} disabled={!!busy} title={`Email ${task.assigned_to} the brief`} aria-label="Email employee">
               <Icon name="mail" size={15} />
@@ -177,6 +195,13 @@ export default function TaskCard({ task, onEdit }) {
       )}
 
       {msg && <div className="task-flash">{msg}</div>}
+      {threadOpen && (
+        <TaskThread
+          task={{ ...task, ...(serverCopy || {}) }}
+          me={getUser() || { id: 0, role: 'admin' }}
+          onClose={closeThread} onSeen={markThreadSeen} onPosted={reloadServer}
+        />
+      )}
     </div>
   );
 }

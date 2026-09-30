@@ -1,7 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchMyTasks, updateTaskStatus, updateMilestone } from '../services/taskSyncApi';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetchMyTasks, updateTaskStatus, updateMilestone, fetchNotifications, markNotificationsRead } from '../services/taskSyncApi';
+import { fetchRoutines, setRoutineCheck } from '../services/collabApi';
 import { useUiStore } from '../store/uiStore';
-import { localISO, daysUntil, fmtShortDate } from '../utils/date';
+import { localISO, daysUntil, fmtShortDate, timeAgo } from '../utils/date';
+import NotificationsMenu from './NotificationsMenu';
+import TaskThread from './TaskThread';
 import Icon from './Icon';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
@@ -14,6 +17,11 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
   const [expanded, setExpanded] = useState({});
   const [updating, setUpdating] = useState({});
   const [filter, setFilter]     = useState('all');
+  const [notifications, setNotifications] = useState([]);
+  const [threadId, setThreadId] = useState(null);
+  const [highlight, setHighlight] = useState(null);
+  const taskRefs = useRef({});
+  const notifRef = useRef([]); // latest list, for comparisons outside render
   const theme = useUiStore(s => s.theme);
   const setTheme = useUiStore(s => s.setTheme);
 
@@ -29,12 +37,66 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
     }
   }, []);
 
+  const loadNotifications = useCallback(async () => {
+    try {
+      const data = await fetchNotifications();
+      const prev = notifRef.current;
+      const next = data.notifications || [];
+      notifRef.current = next;
+      setNotifications(next);
+      // Something new arrived (assignment or reply) — refresh the task list too.
+      if (prev.length && next.some(n => !prev.some(p => p.id === n.id))) load({ quiet: true });
+    } catch { /* offline — keep the last list */ }
+  }, [load]);
+
   useEffect(() => {
     load();
-    // New assignments show up without a manual refresh.
-    const t = setInterval(() => { if (document.visibilityState === 'visible') load({ quiet: true }); }, 60000);
-    return () => clearInterval(t);
-  }, [load]);
+    loadNotifications();
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      loadNotifications();
+    }, 30000);
+    const t2 = setInterval(() => { if (document.visibilityState === 'visible') load({ quiet: true }); }, 90000);
+    return () => { clearInterval(t); clearInterval(t2); };
+  }, [load, loadNotifications]);
+
+  useEffect(() => {
+    document.title = `${notifications.some(n => !Number(n.is_read)) ? `(${notifications.filter(n => !Number(n.is_read)).length}) ` : ''}My work · Task OS`;
+  }, [notifications]);
+
+  useEffect(() => {
+    if (!highlight) return;
+    taskRefs.current[highlight]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t = setTimeout(() => setHighlight(null), 3200);
+    return () => clearTimeout(t);
+  }, [highlight, tasks]);
+
+  function applyRead(match) {
+    notifRef.current = notifRef.current.map(n => match(n) ? { ...n, is_read: 1 } : n);
+    setNotifications(notifRef.current);
+  }
+
+  function markRead(id) {
+    applyRead(n => id === 'all' || n.id === id);
+    markNotificationsRead(id).catch(() => {});
+  }
+
+  function openNotification(n) {
+    if (!n.task_id) return;
+    setFilter('all');
+    setHighlight(n.task_id);
+    load({ quiet: true });
+    if (n.type === 'comment') setThreadId(n.task_id);
+  }
+
+  const markThreadSeen = useCallback(taskId => {
+    const isThread = n => n.type === 'comment' && n.task_id === taskId;
+    notifRef.current.filter(n => isThread(n) && !Number(n.is_read)).forEach(n => markNotificationsRead(n.id).catch(() => {}));
+    notifRef.current = notifRef.current.map(n => isThread(n) ? { ...n, is_read: 1 } : n);
+    setNotifications(notifRef.current);
+  }, []);
+  const closeThread = useCallback(() => setThreadId(null), []);
+  const refreshQuiet = useCallback(() => load({ quiet: true }), [load]);
 
   async function changeStatus(task, status) {
     setUpdating(u => ({ ...u, [task.id]: true }));
@@ -66,6 +128,7 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
     return 0;
   });
   const openCount = tasks.filter(t => t.status !== 'done').length;
+  const threadTask = threadId && tasks.find(t => t.id === threadId);
 
   return (
     <div className="emp-shell">
@@ -78,6 +141,13 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
           </span>
         </div>
         <div className="emp-header-right">
+          <NotificationsMenu
+            notifications={notifications}
+            onOpen={openNotification}
+            onMarkRead={markRead}
+            onRefresh={loadNotifications}
+            emptyHint="New tasks and replies from Uzair show up here."
+          />
           <button className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Toggle theme" aria-label="Toggle theme">
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
           </button>
@@ -89,7 +159,14 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
       <main className="emp-main">
         <div className="emp-hero">
           <h1 className="page-heading">Hi, {authUser?.name?.split(' ')[0]}</h1>
-          <p className="muted-text">{loading ? 'Loading your tasks…' : openCount ? `You have ${openCount} open task${openCount !== 1 ? 's' : ''}.` : 'No open tasks right now.'}</p>
+          <p className="muted-text">{parseToday()}</p>
+        </div>
+
+        <DailyRoutine />
+
+        <div className="section-head">
+          <h2 className="section-title"><Icon name="listChecks" size={17} /> Tasks</h2>
+          <span className="muted-small">{loading ? 'Loading…' : openCount ? `${openCount} open` : 'Nothing open'}</span>
         </div>
 
         <div className="toolbar">
@@ -112,7 +189,7 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
           <div className="empty">
             <div className="empty-icon"><Icon name="inbox" size={22} /></div>
             <div className="empty-title">{filter === 'all' ? 'No tasks assigned yet' : `Nothing ${STATUS_LABEL[filter].toLowerCase()}`}</div>
-            <div className="empty-sub">New tasks from Uzair appear here automatically.</div>
+            <div className="empty-sub">New tasks from Uzair appear here automatically, and you'll get a notification.</div>
           </div>
         ) : (
           <div className="task-list">
@@ -122,8 +199,9 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
               const days = daysUntil(task.due_date);
               const overdue = task.status !== 'done' && task.due_date && task.due_date < today;
               const isOpen = expanded[task.id];
+              const msgCount = Number(task.comment_count) || 0;
               return (
-                <div key={task.id} className={'task' + (task.status === 'done' ? ' is-done' : '') + (overdue ? ' is-overdue' : '')}>
+                <div key={task.id} ref={el => { taskRefs.current[task.id] = el; }} className={'task' + (task.status === 'done' ? ' is-done' : '') + (overdue ? ' is-overdue' : '') + (highlight === task.id ? ' is-highlight' : '')}>
                   <div className="task-main">
                     <span className={`status-dot status-${task.status}`} />
                     <div className="task-body">
@@ -147,9 +225,13 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
                             <Icon name="chevronDown" size={12} className={isOpen ? 'rot-180' : ''} />
                           </button>
                         )}
+                        {task.last_comment_at && <span className="meta">Last message {timeAgo(task.last_comment_at)}</span>}
                       </div>
                     </div>
                     <div className="task-actions task-actions-visible">
+                      <button className={'btn btn-ghost btn-sm thread-btn' + (msgCount ? ' has-count' : '')} onClick={() => setThreadId(task.id)} title="Message Uzair about this task">
+                        <Icon name="message" size={14} /> {msgCount > 0 ? msgCount : 'Discuss'}
+                      </button>
                       {task.status === 'todo' && (
                         <button className="btn btn-secondary btn-sm" disabled={updating[task.id]} onClick={() => changeStatus(task, 'in_progress')}>Start</button>
                       )}
@@ -186,6 +268,88 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
           </div>
         )}
       </main>
+
+      {threadTask && (
+        <TaskThread task={threadTask} me={authUser} onClose={closeThread} onSeen={markThreadSeen} onPosted={refreshQuiet} />
+      )}
     </div>
+  );
+}
+
+function parseToday() {
+  return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+// Today's routine checklist; resets every day (checks are stored per date on the server).
+function DailyRoutine() {
+  const [items, setItems]   = useState(null);
+  const [doneIds, setDone]  = useState(new Set());
+  const [error, setError]   = useState('');
+  const [day, setDay]       = useState(localISO());
+
+  const load = useCallback(() => {
+    const d = localISO();
+    return fetchRoutines(d).then(data => {
+      setDay(d);
+      setItems(data.routines || []);
+      setDone(new Set((data.checks || []).filter(c => c.day === d).map(c => c.routine_id)));
+      setError('');
+    }, e => {
+      setError(e.message);
+      setItems(prev => prev || []);
+    });
+  }, []);
+
+  useEffect(() => {
+    load();
+    // Pick up edits from Uzair and roll over at midnight.
+    const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function toggle(item) {
+    const next = !doneIds.has(item.id);
+    setDone(s => { const n = new Set(s); if (next) n.add(item.id); else n.delete(item.id); return n; });
+    try {
+      await setRoutineCheck(item.id, day, next);
+    } catch (e) {
+      setError(e.message);
+      setDone(s => { const n = new Set(s); if (next) n.delete(item.id); else n.add(item.id); return n; });
+    }
+  }
+
+  if (items === null) return <div className="skeleton" style={{ height: 120 }} />;
+  if (items.length === 0 && !error) return null; // no routine set for this employee
+
+  const doneCount = items.filter(i => doneIds.has(i.id)).length;
+  const complete = items.length > 0 && doneCount === items.length;
+
+  return (
+    <section className={'routine-today' + (complete ? ' is-complete' : '')}>
+      <div className="routine-today-head">
+        <div>
+          <h2 className="section-title"><Icon name="repeat" size={17} /> Today's routine</h2>
+          <div className="muted-small">{complete ? 'All done for today — nice work.' : 'Resets every day. Uzair is notified when you finish.'}</div>
+        </div>
+        <span className={'routine-ring' + (complete ? ' is-complete' : '')} style={{ '--p': `${items.length ? Math.round((doneCount / items.length) * 100) : 0}%` }}>
+          {doneCount}/{items.length}
+        </span>
+      </div>
+      <div className="checklist">
+        {items.map(item => {
+          const isDone = doneIds.has(item.id);
+          return (
+            <button key={item.id} className={'check-item' + (isDone ? ' is-done' : '')} onClick={() => toggle(item)}>
+              <span className="check-box">{isDone ? <Icon name="check" size={11} strokeWidth={3} /> : null}</span>
+              <span className="check-text">
+                <span className="check-title">{item.title}</span>
+                {item.notes && <span className="check-hint">{item.notes}</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {error && <div className="form-msg form-msg-err">{error}</div>}
+    </section>
   );
 }

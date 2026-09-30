@@ -66,3 +66,33 @@ CREATE TABLE IF NOT EXISTS google_accounts (
   picture       TEXT,
   updated_at    TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Daily routine: a checklist the admin sets per employee; checked off fresh each day.
+CREATE TABLE IF NOT EXISTS routines (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  notes      TEXT DEFAULT '',
+  position   INTEGER NOT NULL DEFAULT 0,
+  active     INTEGER NOT NULL DEFAULT 1, -- removed items are deactivated so history stays intact
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_routines_user ON routines(user_id);
+
+CREATE TABLE IF NOT EXISTS routine_checks (
+  routine_id INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+  day        TEXT NOT NULL, -- employee's local date, YYYY-MM-DD
+  done_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (routine_id, day)
+);
+CREATE INDEX IF NOT EXISTS idx_routine_checks_day ON routine_checks(day);
+
+-- Conversation on a task between the admin and the assigned employee.
+CREATE TABLE IF NOT EXISTS task_comments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  body       TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);

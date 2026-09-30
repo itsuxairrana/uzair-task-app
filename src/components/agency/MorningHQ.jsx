@@ -432,8 +432,11 @@ function TeamSnapshot() {
   const employees = useTeamStore(s => s.employees);
   const serverTasks = useTeamStore(s => s.serverTasks);
   const notifications = useTeamStore(s => s.notifications);
+  const routines = useTeamStore(s => s.routines);
+  const routineChecks = useTeamStore(s => s.routineChecks);
   const navigate = useUiStore(s => s.navigate);
   if (!employees.length) return null;
+  const today = localISO();
   const open = serverTasks.filter(t => t.status !== 'done');
   const unread = notifications.filter(n => !Number(n.is_read));
   const latest = unread[0] || notifications[0];
@@ -443,16 +446,23 @@ function TeamSnapshot() {
       <div className="team-snapshot-row">
         {employees.map((e, i) => {
           const mine = open.filter(t => t.assignee_name === e.name);
+          const items = routines.filter(r => r.user_id === e.id);
+          const done = routineChecks.filter(c => c.user_id === e.id && c.day === today && items.some(r => r.id === c.routine_id)).length;
           return (
             <span key={e.id} className="team-snapshot-person">
               <span className={`avatar avatar-sm avatar-c${i % 6}`}>{e.name.charAt(0).toUpperCase()}</span>
               {e.name} <span className="muted-small">{mine.length} open</span>
+              {items.length > 0 && (
+                <button className={'chip chip-sm' + (done === items.length ? ' chip-green' : '')} onClick={() => navigate('team', { view: 'routine', userId: e.id })} title="Daily routine today">
+                  <Icon name="repeat" size={11} /> {done}/{items.length}
+                </button>
+              )}
             </span>
           );
         })}
       </div>
       {latest && (
-        <button className={'team-snapshot-latest' + (unread.length ? ' is-unread' : '')} onClick={() => navigate('team', latest.task_id ? { taskId: latest.task_id } : null)}>
+        <button className={'team-snapshot-latest' + (unread.length ? ' is-unread' : '')} onClick={() => navigate('team', latest.type === 'routine_done' ? { view: 'routine', userId: Number(String(latest.task_id).split(':')[1]) } : latest.task_id ? { taskId: latest.task_id, thread: latest.type === 'comment' } : null)}>
           <Icon name="checkCircle" size={14} />
           <span>{latest.message}</span>
           {unread.length > 1 && <span className="badge badge-accent">+{unread.length - 1} more</span>}

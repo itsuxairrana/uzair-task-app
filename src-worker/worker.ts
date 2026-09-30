@@ -119,6 +119,14 @@ async function handleUsers(req: Request, env: Env, auth: JwtPayload, url: URL): 
   return errResp("Method not allowed", 405);
 }
 
+const COMMENT_STATS = `(SELECT COUNT(*) FROM task_comments c WHERE c.task_id=t.id) AS comment_count,
+  (SELECT MAX(c.created_at) FROM task_comments c WHERE c.task_id=t.id) AS last_comment_at`;
+
+// `key` goes in notifications.task_id: a task id, or e.g. "routine:<user>:<day>".
+async function notify(env: Env, userId: number, type: string, message: string, key: string | null = null) {
+  await env.DB.prepare("INSERT INTO notifications (user_id, type, message, task_id) VALUES (?,?,?,?)").bind(userId, type, message, key).run();
+}
+
 // ── /api/db_tasks.php ─────────────────────────────────────────────────────────
 async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
   const isAdmin = auth.role === "admin";
@@ -126,8 +134,8 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
 
   if (req.method === "GET") {
     const tasks = isAdmin
-      ? await all(env, `SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_user_id=u.id ORDER BY t.created_at DESC`)
-      : await all(env, `SELECT t.* FROM tasks t WHERE t.assigned_user_id=? ORDER BY t.created_at DESC`, userId);
+      ? await all(env, `SELECT t.*, u.name AS assignee_name, ${COMMENT_STATS} FROM tasks t LEFT JOIN users u ON t.assigned_user_id=u.id ORDER BY t.created_at DESC`)
+      : await all(env, `SELECT t.*, ${COMMENT_STATS} FROM tasks t WHERE t.assigned_user_id=? ORDER BY t.created_at DESC`, userId);
     for (const t of tasks) t.milestones = await all(env, "SELECT * FROM milestones WHERE task_id=? ORDER BY rowid ASC", t.id);
     return json({ tasks });
   }
@@ -143,7 +151,10 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
       if (row) assigneeId = Number(row.id);
     }
 
-    const exists = await first(env, "SELECT id FROM tasks WHERE id=?", b.id);
+    const exists = await first(env, "SELECT id, assigned_user_id FROM tasks WHERE id=?", b.id);
+    if (assigneeId && (!exists || Number(exists.assigned_user_id) !== assigneeId)) {
+      await notify(env, assigneeId, "task_assigned", `${auth.name} assigned you: "${text(b.title)}"`, b.id);
+    }
     if (exists) {
       await env.DB.prepare(
         `UPDATE tasks SET title=?, notes=?, priority=?, status=?, due_date=?, due_time=?, assigned_to=?, assigned_user_id=?, workspace=?, client_tag=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
@@ -212,7 +223,7 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
 async function handleNotifications(req: Request, env: Env, auth: JwtPayload): Promise<Response> {
   const userId = auth.sub;
   if (req.method === "GET") {
-    const rows = await all(env, "SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50", userId);
+    const rows = await all(env, "SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 50", userId);
     const unread = rows.filter((n) => !bool(n.is_read));
     return json({ notifications: rows, unread_count: unread.length });
   }
@@ -223,6 +234,130 @@ async function handleNotifications(req: Request, env: Env, auth: JwtPayload): Pr
     else await env.DB.prepare("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?").bind(id, userId).run();
     return json({ ok: true });
   }
+  return errResp("Method not allowed", 405);
+}
+
+// ── /api/routines — daily checklist per employee ─────────────────────────────
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+async function handleRoutines(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
+  const isAdmin = auth.role === "admin";
+  const route = url.pathname.slice("/api/routines".length);
+
+  if (req.method === "GET" && route === "") {
+    // ?day=YYYY-MM-DD (today, client-local) and optional ?since= for history
+    const day = url.searchParams.get("day") ?? "";
+    const since = url.searchParams.get("since") ?? day;
+    if (!DAY_RE.test(day) || !DAY_RE.test(since)) return errResp("day must be YYYY-MM-DD");
+    const routines = isAdmin
+      ? await all(env, "SELECT r.id, r.user_id, r.title, r.notes, r.position, u.name AS user_name FROM routines r JOIN users u ON u.id=r.user_id WHERE r.active=1 ORDER BY r.user_id, r.position, r.id")
+      : await all(env, "SELECT id, user_id, title, notes, position FROM routines WHERE user_id=? AND active=1 ORDER BY position, id", auth.sub);
+    const checks = isAdmin
+      ? await all(env, "SELECT c.routine_id, c.day, c.done_at, r.user_id FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE c.day BETWEEN ? AND ?", since, day)
+      : await all(env, "SELECT c.routine_id, c.day, c.done_at, r.user_id FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE r.user_id=? AND c.day BETWEEN ? AND ?", auth.sub, since, day);
+    return json({ routines, checks });
+  }
+
+  if (req.method === "PUT" && route === "/check") {
+    const b = await req.json<any>().catch(() => ({}));
+    const routineId = int(b.routine_id);
+    const day = text(b.day);
+    if (!routineId || !DAY_RE.test(day)) return errResp("routine_id and day required");
+    const r = await first(env, "SELECT id, user_id FROM routines WHERE id=? AND active=1", routineId);
+    if (!r || (!isAdmin && Number(r.user_id) !== auth.sub)) return errResp("Forbidden", 403);
+    if (bool(b.done)) await env.DB.prepare("INSERT OR IGNORE INTO routine_checks (routine_id, day) VALUES (?,?)").bind(routineId, day).run();
+    else await env.DB.prepare("DELETE FROM routine_checks WHERE routine_id=? AND day=?").bind(routineId, day).run();
+
+    // Tell the admins once per day when an employee finishes the whole routine.
+    if (!isAdmin && bool(b.done)) {
+      const total = int((await first(env, "SELECT COUNT(*) AS n FROM routines WHERE user_id=? AND active=1", auth.sub))?.n);
+      const done = int((await first(env, "SELECT COUNT(*) AS n FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE r.user_id=? AND r.active=1 AND c.day=?", auth.sub, day))?.n);
+      const key = `routine:${auth.sub}:${day}`;
+      if (total > 0 && done >= total && !(await first(env, "SELECT id FROM notifications WHERE type='routine_done' AND task_id=?", key))) {
+        for (const a of await all(env, "SELECT id FROM users WHERE role='admin'")) {
+          await notify(env, Number(a.id), "routine_done", `${auth.name} finished today's daily routine (${done}/${total})`, key);
+        }
+      }
+    }
+    return json({ ok: true });
+  }
+
+  if (!isAdmin) return errResp("Forbidden", 403);
+
+  if (req.method === "POST" && route === "") {
+    const b = await req.json<any>().catch(() => ({}));
+    const userId = int(b.user_id);
+    const title = text(b.title).slice(0, 200);
+    if (!userId || !title) return errResp("Employee and title are required");
+    if (!(await first(env, "SELECT id FROM users WHERE id=? AND role='employee'", userId))) return errResp("Unknown employee");
+    const pos = int((await first(env, "SELECT COALESCE(MAX(position), 0) + 1 AS p FROM routines WHERE user_id=?", userId))?.p);
+    const r = await env.DB.prepare("INSERT INTO routines (user_id, title, notes, position) VALUES (?,?,?,?)").bind(userId, title, text(b.notes).slice(0, 500), pos).run();
+    return json({ ok: true, id: r.meta.last_row_id }, 201);
+  }
+
+  if (req.method === "PATCH" && route === "") {
+    const b = await req.json<any>().catch(() => ({}));
+    const id = int(b.id);
+    const title = text(b.title).slice(0, 200);
+    if (!id || !title) return errResp("id and title required");
+    await env.DB.prepare("UPDATE routines SET title=?, notes=? WHERE id=?").bind(title, text(b.notes).slice(0, 500), id).run();
+    return json({ ok: true });
+  }
+
+  if (req.method === "DELETE" && route === "") {
+    const id = int(url.searchParams.get("id"));
+    if (!id) return errResp("id required");
+    await env.DB.prepare("UPDATE routines SET active=0 WHERE id=?").bind(id).run();
+    return json({ ok: true });
+  }
+
+  return errResp("Not found", 404);
+}
+
+// ── /api/comments — task conversation (admin ↔ assigned employee) ────────────
+async function canSeeTask(env: Env, auth: JwtPayload, taskId: string) {
+  const t = await first(env, "SELECT id, title, created_by, assigned_user_id FROM tasks WHERE id=?", taskId);
+  if (!t) return null;
+  if (auth.role !== "admin" && Number(t.assigned_user_id) !== auth.sub) return null;
+  return t;
+}
+
+async function handleComments(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
+  if (req.method === "GET") {
+    const taskId = text(url.searchParams.get("task_id"));
+    if (!taskId || !(await canSeeTask(env, auth, taskId))) return errResp("Task not found", 404);
+    const comments = await all(env,
+      "SELECT c.id, c.task_id, c.user_id, c.body, c.created_at, u.name AS user_name, u.role AS user_role FROM task_comments c LEFT JOIN users u ON u.id=c.user_id WHERE c.task_id=? ORDER BY c.id ASC",
+      taskId);
+    return json({ comments });
+  }
+
+  if (req.method === "POST") {
+    const b = await req.json<any>().catch(() => ({}));
+    const taskId = text(b.task_id);
+    const body = text(b.body).slice(0, 4000);
+    if (!taskId || !body) return errResp("Message is empty");
+    const t = await canSeeTask(env, auth, taskId);
+    if (!t) return errResp("Task not found", 404);
+    const r = await env.DB.prepare("INSERT INTO task_comments (task_id, user_id, body) VALUES (?,?,?)").bind(taskId, auth.sub, body).run();
+
+    // Notify the other side: admin → assigned employee, employee → the admin who created the task.
+    const snippet = body.length > 80 ? body.slice(0, 77) + "…" : body;
+    const recipient = auth.role === "admin" ? t.assigned_user_id : t.created_by;
+    if (recipient && Number(recipient) !== auth.sub) {
+      await notify(env, Number(recipient), "comment", `${auth.name} on "${t.title}": ${snippet}`, taskId);
+    }
+    return json({ ok: true, id: r.meta.last_row_id }, 201);
+  }
+
+  if (req.method === "DELETE") {
+    const id = int(url.searchParams.get("id"));
+    const c = await first(env, "SELECT user_id FROM task_comments WHERE id=?", id);
+    if (!c || Number(c.user_id) !== auth.sub) return errResp("You can only delete your own messages", 403);
+    await env.DB.prepare("DELETE FROM task_comments WHERE id=?").bind(id).run();
+    return json({ ok: true });
+  }
+
   return errResp("Method not allowed", 405);
 }
 
@@ -372,6 +507,8 @@ export default {
           else if (url.pathname === "/api/db_tasks.php") res = await handleTasks(req, env, auth, url);
           else if (url.pathname === "/api/notifications.php") res = await handleNotifications(req, env, auth);
           else if (url.pathname.startsWith("/api/google/")) res = await handleGoogle(req, env, auth, url);
+          else if (url.pathname === "/api/routines" || url.pathname.startsWith("/api/routines/")) res = await handleRoutines(req, env, auth, url);
+          else if (url.pathname === "/api/comments") res = await handleComments(req, env, auth, url);
           else res = errResp("Not found", 404);
         }
         for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);

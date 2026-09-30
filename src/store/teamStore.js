@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { fetchTeam, addTeamMember, removeTeamMember } from '../services/authApi';
 import { fetchDbTasks, fetchNotifications, markNotificationsRead } from '../services/taskSyncApi';
 import { saveTeam } from '../services/gmailApi';
+import { fetchRoutines } from '../services/collabApi';
+import { localISO, addDaysISO } from '../utils/date';
 import { useTaskStore } from './taskStore';
 
 let taskReq = 0; // only the newest response may update state (polls and clicks can overlap)
@@ -12,6 +14,8 @@ export const useTeamStore = create((set, get) => ({
   employees: [],
   serverTasks: [],
   notifications: [],
+  routines: [],       // active daily-routine items for every employee
+  routineChecks: [],  // { routine_id, day, done_at, user_id } for the last 7 days
   loaded: false,
   error: '',
 
@@ -49,12 +53,20 @@ export const useTeamStore = create((set, get) => ({
       const hasNew = notifications.some(n => !knownIds.has(n.id));
       set({ notifications });
       // Someone just finished something — pull their task changes right away.
-      if (hasNew) get().loadServerTasks();
+      if (hasNew) { get().loadServerTasks(); get().loadRoutines(); }
     } catch { /* offline — keep the last list */ }
   },
 
+  async loadRoutines() {
+    try {
+      const today = localISO();
+      const data = await fetchRoutines(today, addDaysISO(today, -6));
+      set({ routines: data.routines || [], routineChecks: data.checks || [] });
+    } catch { /* keep the last known routine state */ }
+  },
+
   async refreshAll() {
-    await Promise.all([get().loadEmployees(), get().loadServerTasks(), get().loadNotifications()]);
+    await Promise.all([get().loadEmployees(), get().loadServerTasks(), get().loadNotifications(), get().loadRoutines()]);
   },
 
   async markRead(id = 'all') {

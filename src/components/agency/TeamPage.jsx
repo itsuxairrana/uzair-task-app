@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTeamStore } from '../../store/teamStore';
 import { useTaskStore } from '../../store/taskStore';
 import { useUiStore } from '../../store/uiStore';
 import { useAgencyStore } from '../../store/agencyStore';
 import { deleteTaskFromDB } from '../../services/taskSyncApi';
 import { localISO, daysUntil, fmtShortDate, timeAgo } from '../../utils/date';
+import { getUser } from '../../services/authApi';
 import TaskForm from '../TaskForm';
+import TaskThread from '../TaskThread';
+import RoutineBoard from './RoutineBoard';
 import Icon from '../Icon';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
@@ -30,7 +33,14 @@ export default function TeamPage() {
   const [form, setForm]           = useState(null);  // { task } | { defaults }
   const [highlight, setHighlight] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [view, setView]           = useState('tasks'); // 'tasks' | 'routine'
+  const [routineFocus, setRoutineFocus] = useState(null);
+  const [threadId, setThreadId]   = useState(null);
   const rowRefs = useRef({});
+  const routines = useTeamStore(s => s.routines);
+  const routineChecks = useTeamStore(s => s.routineChecks);
+  const loadRoutines = useTeamStore(s => s.loadRoutines);
+  const me = useMemo(() => getUser() || { id: 0, name: 'Admin', role: 'admin' }, []);
 
   const today = localISO();
 
@@ -38,11 +48,18 @@ export default function TeamPage() {
 
   // Arriving from a notification: show that task and flash it (state adjusted during render).
   const [seenFocus, setSeenFocus] = useState(null);
-  if (navFocus?.taskId && navFocus !== seenFocus) {
+  if (navFocus && navFocus !== seenFocus) {
     setSeenFocus(navFocus);
-    setMember('all');
-    setFilter('all');
-    setHighlight(navFocus.taskId);
+    if (navFocus.view === 'routine') {
+      setView('routine');
+      setRoutineFocus(navFocus.userId || null);
+    } else if (navFocus.taskId) {
+      setView('tasks');
+      setMember('all');
+      setFilter('all');
+      setHighlight(navFocus.taskId);
+      if (navFocus.thread) setThreadId(navFocus.taskId);
+    }
   }
   useEffect(() => { if (navFocus) clearFocus(); }, [navFocus, clearFocus]);
 
@@ -56,7 +73,7 @@ export default function TeamPage() {
 
   async function refresh() {
     setRefreshing(true);
-    await Promise.all([loadEmployees(), loadServerTasks()]);
+    await Promise.all([loadEmployees(), loadServerTasks(), loadRoutines()]);
     setRefreshing(false);
   }
 
@@ -100,6 +117,20 @@ export default function TeamPage() {
     setTimeout(loadServerTasks, 400);
   }
 
+  // Opening a conversation clears its unread message notifications.
+  const markThreadSeen = useCallback(taskId => {
+    const { notifications, markRead } = useTeamStore.getState();
+    notifications.filter(n => n.type === 'comment' && n.task_id === taskId && !Number(n.is_read)).forEach(n => markRead(n.id));
+  }, []);
+  const closeThread = useCallback(() => setThreadId(null), []);
+  const threadTask = threadId && serverTasks.find(t => t.id === threadId);
+
+  const routineFor = userId => {
+    const items = routines.filter(r => r.user_id === userId);
+    const done = routineChecks.filter(c => c.user_id === userId && c.day === today && items.some(r => r.id === c.routine_id)).length;
+    return { total: items.length, done };
+  };
+
   function closeForm() {
     setForm(null);
     setTimeout(loadServerTasks, 700); // let the background sync land first
@@ -122,22 +153,31 @@ export default function TeamPage() {
   return (
     <div className="page">
       <div className="page-actions">
-        <p className="page-lede">Tasks here are live in each employee's dashboard. You're notified when they mark one done.</p>
+        <div className="segmented segmented-lg">
+          <button className={'segmented-opt' + (view === 'tasks' ? ' is-active' : '')} onClick={() => setView('tasks')}>
+            <Icon name="listChecks" size={15} /> Custom tasks
+          </button>
+          <button className={'segmented-opt' + (view === 'routine' ? ' is-active' : '')} onClick={() => setView('routine')}>
+            <Icon name="repeat" size={15} /> Daily routine
+          </button>
+        </div>
         <div className="page-actions-btns">
           <button className="btn btn-ghost btn-icon" onClick={refresh} title="Refresh" aria-label="Refresh" disabled={refreshing}>
             <Icon name="refresh" size={16} className={refreshing ? 'spin' : ''} />
           </button>
           <button className="btn btn-secondary" onClick={() => openSettings('team')}><Icon name="users" size={15} /> Manage members</button>
-          <button className="btn btn-primary" onClick={() => setForm({ defaults: { assigned_to: member !== 'all' ? member : employees[0]?.name, workspace: 'team' } })} disabled={!employees.length}>
-            <Icon name="plus" size={15} /> Assign task
-          </button>
+          {view === 'tasks' && (
+            <button className="btn btn-primary" onClick={() => setForm({ defaults: { assigned_to: member !== 'all' ? member : employees[0]?.name, workspace: 'team' } })} disabled={!employees.length}>
+              <Icon name="plus" size={15} /> Assign task
+            </button>
+          )}
         </div>
       </div>
 
       {error && <div className="callout callout-red">{error}</div>}
 
       <div className="member-grid">
-        <button className={'member-card' + (member === 'all' ? ' is-active' : '')} onClick={() => setMember('all')}>
+        <button className={'member-card' + (member === 'all' && view === 'tasks' ? ' is-active' : '')} onClick={() => setMember('all')}>
           <span className="avatar avatar-muted"><Icon name="users" size={15} /></span>
           <span className="member-card-body">
             <span className="member-card-name">Everyone</span>
@@ -147,7 +187,7 @@ export default function TeamPage() {
         {employees.map((e, i) => {
           const s = statsFor(e.name);
           return (
-            <button key={e.id} className={'member-card' + (member === e.name ? ' is-active' : '')} onClick={() => setMember(e.name)}>
+            <button key={e.id} className={'member-card' + (member === e.name && view === 'tasks' ? ' is-active' : '')} onClick={() => { setMember(e.name); if (view === 'routine') setRoutineFocus(e.id); }}>
               <span className={`avatar avatar-c${i % 6}`}>{e.name.charAt(0).toUpperCase()}</span>
               <span className="member-card-body">
                 <span className="member-card-name">{e.name}</span>
@@ -156,12 +196,23 @@ export default function TeamPage() {
                   {s.overdue > 0 && <span className="text-red"> · {s.overdue} overdue</span>}
                 </span>
               </span>
-              <span className="member-card-done" title="Completed">{s.done}<Icon name="check" size={12} /></span>
+              {(() => {
+                const r = routineFor(e.id);
+                return r.total > 0
+                  ? <span className={'member-card-daily' + (r.done === r.total ? ' is-complete' : '')} title="Daily routine today">{r.done}/{r.total}<Icon name="repeat" size={12} /></span>
+                  : <span className="member-card-done" title="Completed tasks">{s.done}<Icon name="check" size={12} /></span>;
+              })()}
             </button>
           );
         })}
       </div>
 
+      {view === 'routine' ? (
+        <>
+          <p className="page-lede">Each employee gets this checklist fresh every day. You're notified when someone finishes theirs. Click an item to rename it.</p>
+          <RoutineBoard key={routineFocus || 'all'} focusUserId={routineFocus} />
+        </>
+      ) : (<>
       <div className="toolbar">
         <div className="segmented">
           {FILTERS.map(([id, label]) => (
@@ -194,6 +245,7 @@ export default function TeamPage() {
                   highlighted={highlight === t.id}
                   rowRef={el => { rowRefs.current[t.id] = el; }}
                   onEdit={() => editTask(t)} onDelete={() => removeTask(t)}
+                  onThread={() => setThreadId(t.id)}
                 />
               ))}
             </div>
@@ -202,13 +254,17 @@ export default function TeamPage() {
       ))}
 
       <LegacyTeamTasks employees={employees} />
+      </>)}
 
+      {threadTask && (
+        <TaskThread task={threadTask} me={me} onClose={closeThread} onSeen={markThreadSeen} onPosted={loadServerTasks} />
+      )}
       {form && <TaskForm task={form.task || null} defaults={form.defaults} onClose={closeForm} />}
     </div>
   );
 }
 
-function TeamTaskRow({ t, today, highlighted, rowRef, onEdit, onDelete }) {
+function TeamTaskRow({ t, today, highlighted, rowRef, onEdit, onDelete, onThread }) {
   const ms = t.milestones || [];
   const done = ms.filter(m => Number(m.done)).length;
   const days = daysUntil(t.due_date);
@@ -233,10 +289,15 @@ function TeamTaskRow({ t, today, highlighted, rowRef, onEdit, onDelete }) {
             </span>
           )}
           {t.client_tag && <span className="chip chip-sm">{t.client_tag}</span>}
-          {t.updated_at && <span className="muted-small">Updated {timeAgo(t.updated_at)}</span>}
+          {t.last_comment_at
+            ? <span className="muted-small">Last message {timeAgo(t.last_comment_at)}</span>
+            : t.updated_at && <span className="muted-small">Updated {timeAgo(t.updated_at)}</span>}
         </div>
       </div>
       <div className="list-row-actions">
+        <button className={'btn btn-ghost btn-sm thread-btn' + (Number(t.comment_count) ? ' has-count' : '')} onClick={onThread} title="Conversation" aria-label={`Conversation (${Number(t.comment_count) || 0} messages)`}>
+          <Icon name="message" size={14} />{Number(t.comment_count) > 0 && <span>{t.comment_count}</span>}
+        </button>
         <button className="btn btn-ghost btn-icon btn-sm" onClick={onEdit} title="Edit" aria-label="Edit"><Icon name="pencil" size={14} /></button>
         <button className="btn btn-ghost btn-icon btn-sm btn-danger-text" onClick={onDelete} title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
       </div>
