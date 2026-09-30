@@ -119,6 +119,19 @@ async function handleUsers(req: Request, env: Env, auth: JwtPayload, url: URL): 
   return errResp("Method not allowed", 405);
 }
 
+// Accept "https://…", "http://…" or "www.…"; anything else (javascript:, data:, …) is dropped.
+function toHttpUrl(v: unknown): string | null {
+  const s = text(v);
+  if (!s || /\s/.test(s)) return null;
+  const u = /^www\./i.test(s) ? `https://${s}` : s;
+  try {
+    const parsed = new URL(u);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 const COMMENT_STATS = `(SELECT COUNT(*) FROM task_comments c WHERE c.task_id=t.id) AS comment_count,
   (SELECT MAX(c.created_at) FROM task_comments c WHERE c.task_id=t.id) AS last_comment_at`;
 
@@ -198,8 +211,16 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
       if (!isAdmin && b.status === "done") {
         const t = await first(env, "SELECT title, created_by FROM tasks WHERE id=?", id);
         if (t) {
-          const msg = `${auth.name} completed task: "${t.title}"`;
-          await env.DB.prepare("INSERT INTO notifications (user_id, type, message, task_id) VALUES (?, 'task_completed', ?, ?)").bind(t.created_by, msg, id).run();
+          // Optional hand-off: a short report and links to the files/deliverables.
+          const report = text(b.report).slice(0, 4000);
+          const links = (Array.isArray(b.links) ? b.links : []).map(toHttpUrl).filter(Boolean).slice(0, 10) as string[];
+          let msg = `${auth.name} completed task: "${t.title}"`;
+          if (report || links.length) {
+            const body = [report, ...links].filter(Boolean).join("\n");
+            await env.DB.prepare("INSERT INTO task_comments (task_id, user_id, body, kind) VALUES (?,?,?,'submission')").bind(id, auth.sub, body).run();
+            msg += links.length ? ` and sent their work (${links.length} link${links.length > 1 ? "s" : ""})` : " and sent a report";
+          }
+          await notify(env, Number(t.created_by), "task_completed", msg, id);
         }
       }
       return json({ ok: true });
@@ -239,6 +260,24 @@ async function handleNotifications(req: Request, env: Env, auth: JwtPayload): Pr
 
 // ── /api/routines — daily checklist per employee ─────────────────────────────
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ALL_DAYS = "0123456"; // JS weekday digits, 0 = Sunday
+const TIME_ZONE = "Asia/Karachi"; // the team's working time zone (evening alert, server-side "today")
+
+const weekdayOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay();
+const onDay = (days: unknown, day: string) => String(days ?? ALL_DAYS).includes(String(weekdayOf(day)));
+function normDays(v: unknown): string | null {
+  const set = new Set(String(v ?? "").split("").filter((c) => /[0-6]/.test(c)));
+  return set.size ? [...set].sort().join("") : null;
+}
+const todayIn = (tz: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+
+// Active routine items for one employee that apply on `day`, plus how many are checked.
+async function routineProgress(env: Env, userId: number, day: string) {
+  const items = (await all(env, "SELECT id, days FROM routines WHERE user_id=? AND active=1", userId)).filter((r) => onDay(r.days, day));
+  if (!items.length) return { total: 0, done: 0 };
+  const checked = new Set((await all(env, "SELECT routine_id FROM routine_checks WHERE day=?", day)).map((c) => Number(c.routine_id)));
+  return { total: items.length, done: items.filter((r) => checked.has(Number(r.id))).length };
+}
 
 async function handleRoutines(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
   const isAdmin = auth.role === "admin";
@@ -250,11 +289,11 @@ async function handleRoutines(req: Request, env: Env, auth: JwtPayload, url: URL
     const since = url.searchParams.get("since") ?? day;
     if (!DAY_RE.test(day) || !DAY_RE.test(since)) return errResp("day must be YYYY-MM-DD");
     const routines = isAdmin
-      ? await all(env, "SELECT r.id, r.user_id, r.title, r.notes, r.position, u.name AS user_name FROM routines r JOIN users u ON u.id=r.user_id WHERE r.active=1 ORDER BY r.user_id, r.position, r.id")
-      : await all(env, "SELECT id, user_id, title, notes, position FROM routines WHERE user_id=? AND active=1 ORDER BY position, id", auth.sub);
+      ? await all(env, "SELECT r.id, r.user_id, r.title, r.notes, r.position, r.days, u.name AS user_name FROM routines r JOIN users u ON u.id=r.user_id WHERE r.active=1 ORDER BY r.user_id, r.position, r.id")
+      : (await all(env, "SELECT id, user_id, title, notes, position, days FROM routines WHERE user_id=? AND active=1 ORDER BY position, id", auth.sub)).filter((r) => onDay(r.days, day));
     const checks = isAdmin
-      ? await all(env, "SELECT c.routine_id, c.day, c.done_at, r.user_id FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE c.day BETWEEN ? AND ?", since, day)
-      : await all(env, "SELECT c.routine_id, c.day, c.done_at, r.user_id FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE r.user_id=? AND c.day BETWEEN ? AND ?", auth.sub, since, day);
+      ? await all(env, "SELECT c.routine_id, c.day, c.done_at, r.user_id FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE r.active=1 AND c.day BETWEEN ? AND ?", since, day)
+      : await all(env, "SELECT c.routine_id, c.day, c.done_at, r.user_id FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE r.user_id=? AND r.active=1 AND c.day BETWEEN ? AND ?", auth.sub, since, day);
     return json({ routines, checks });
   }
 
@@ -270,8 +309,7 @@ async function handleRoutines(req: Request, env: Env, auth: JwtPayload, url: URL
 
     // Tell the admins once per day when an employee finishes the whole routine.
     if (!isAdmin && bool(b.done)) {
-      const total = int((await first(env, "SELECT COUNT(*) AS n FROM routines WHERE user_id=? AND active=1", auth.sub))?.n);
-      const done = int((await first(env, "SELECT COUNT(*) AS n FROM routine_checks c JOIN routines r ON r.id=c.routine_id WHERE r.user_id=? AND r.active=1 AND c.day=?", auth.sub, day))?.n);
+      const { total, done } = await routineProgress(env, auth.sub, day);
       const key = `routine:${auth.sub}:${day}`;
       if (total > 0 && done >= total && !(await first(env, "SELECT id FROM notifications WHERE type='routine_done' AND task_id=?", key))) {
         for (const a of await all(env, "SELECT id FROM users WHERE role='admin'")) {
@@ -290,17 +328,24 @@ async function handleRoutines(req: Request, env: Env, auth: JwtPayload, url: URL
     const title = text(b.title).slice(0, 200);
     if (!userId || !title) return errResp("Employee and title are required");
     if (!(await first(env, "SELECT id FROM users WHERE id=? AND role='employee'", userId))) return errResp("Unknown employee");
+    const days = b.days === undefined ? ALL_DAYS : normDays(b.days);
+    if (!days) return errResp("Pick at least one day");
     const pos = int((await first(env, "SELECT COALESCE(MAX(position), 0) + 1 AS p FROM routines WHERE user_id=?", userId))?.p);
-    const r = await env.DB.prepare("INSERT INTO routines (user_id, title, notes, position) VALUES (?,?,?,?)").bind(userId, title, text(b.notes).slice(0, 500), pos).run();
+    const r = await env.DB.prepare("INSERT INTO routines (user_id, title, notes, position, days) VALUES (?,?,?,?,?)").bind(userId, title, text(b.notes).slice(0, 500), pos, days).run();
     return json({ ok: true, id: r.meta.last_row_id }, 201);
   }
 
   if (req.method === "PATCH" && route === "") {
     const b = await req.json<any>().catch(() => ({}));
     const id = int(b.id);
-    const title = text(b.title).slice(0, 200);
-    if (!id || !title) return errResp("id and title required");
-    await env.DB.prepare("UPDATE routines SET title=?, notes=? WHERE id=?").bind(title, text(b.notes).slice(0, 500), id).run();
+    const cur = id ? await first(env, "SELECT title, notes, days FROM routines WHERE id=? AND active=1", id) : null;
+    if (!cur) return errResp("Routine item not found", 404);
+    const title = b.title === undefined ? text(cur.title) : text(b.title).slice(0, 200);
+    const notes = b.notes === undefined ? text(cur.notes) : text(b.notes).slice(0, 500);
+    const days = b.days === undefined ? text(cur.days) || ALL_DAYS : normDays(b.days);
+    if (!title) return errResp("Title can't be empty");
+    if (!days) return errResp("Pick at least one day");
+    await env.DB.prepare("UPDATE routines SET title=?, notes=?, days=? WHERE id=?").bind(title, notes, days, id).run();
     return json({ ok: true });
   }
 
@@ -327,7 +372,7 @@ async function handleComments(req: Request, env: Env, auth: JwtPayload, url: URL
     const taskId = text(url.searchParams.get("task_id"));
     if (!taskId || !(await canSeeTask(env, auth, taskId))) return errResp("Task not found", 404);
     const comments = await all(env,
-      "SELECT c.id, c.task_id, c.user_id, c.body, c.created_at, u.name AS user_name, u.role AS user_role FROM task_comments c LEFT JOIN users u ON u.id=c.user_id WHERE c.task_id=? ORDER BY c.id ASC",
+      "SELECT c.id, c.task_id, c.user_id, c.body, c.kind, c.created_at, u.name AS user_name, u.role AS user_role FROM task_comments c LEFT JOIN users u ON u.id=c.user_id WHERE c.task_id=? ORDER BY c.id ASC",
       taskId);
     return json({ comments });
   }
@@ -480,7 +525,30 @@ async function handleGoogle(req: Request, env: Env, auth: JwtPayload, url: URL):
 }
 
 // ── Router ───────────────────────────────────────────────────────────────────
+// ── Evening routine check (cron, see wrangler.jsonc triggers) ────────────────
+// Remind employees with unfinished routine items and tell the admins who's behind. Once per person per day.
+async function eveningRoutineCheck(env: Env) {
+  const day = todayIn(TIME_ZONE);
+  const admins = await all(env, "SELECT id FROM users WHERE role='admin'");
+  for (const e of await all(env, "SELECT id, name FROM users WHERE role='employee'")) {
+    const uid = Number(e.id);
+    const { total, done } = await routineProgress(env, uid, day);
+    if (total === 0 || done >= total) continue;
+    const key = `routine:${uid}:${day}`;
+    if (await first(env, "SELECT id FROM notifications WHERE type='routine_missed' AND task_id=? LIMIT 1", key)) continue;
+    const left = total - done;
+    for (const a of admins) {
+      await notify(env, Number(a.id), "routine_missed", `Evening check: ${e.name} has ${left} of ${total} routine item${total > 1 ? "s" : ""} left today`, key);
+    }
+    await notify(env, uid, "routine_reminder", `Reminder: ${left} routine item${left > 1 ? "s" : ""} left for today`, key);
+  }
+}
+
 export default {
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(eveningRoutineCheck(env));
+  },
+
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const origin = req.headers.get("Origin");

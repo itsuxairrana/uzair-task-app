@@ -809,6 +809,42 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 button.chip { cursor: pointer; }
 button.chip:hover { border-color: var(--border-strong); }
 
+/* weekday scheduling */
+.day-filter { display: flex; flex-wrap: wrap; gap: 4px; }
+.day-filter-opt { height: 28px; padding: 0 11px; border-radius: 99px; font-size: 12.5px; font-weight: 500; color: var(--text-2); border: 1px solid var(--border); background: var(--surface); }
+.day-filter-opt:hover { color: var(--text); border-color: var(--border-strong); }
+.day-filter-opt.is-today { box-shadow: inset 0 -2px 0 var(--accent); }
+.day-filter-opt.is-active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.routine-item { flex-direction: column; align-items: stretch; gap: 6px; }
+.routine-item-row { display: flex; align-items: center; gap: 10px; }
+.routine-item.is-off .routine-item-title { color: var(--text-3); }
+.routine-item.is-off .check-box { border-style: dashed; }
+.days-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 99px; font-size: 11px; font-weight: 500; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); white-space: nowrap; flex-shrink: 0; }
+.days-chip:hover, .days-chip.is-open { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-soft); }
+.day-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding-left: 30px; }
+.day-pick { width: 28px; height: 28px; border-radius: 50%; font-size: 11.5px; font-weight: 600; color: var(--text-2); border: 1px solid var(--border-strong); background: var(--surface); transition: background var(--t), color var(--t); }
+.day-pick.is-on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.day-pick-preset { margin-left: 6px; font-size: 12px; }
+.routine-add { flex-direction: column; align-items: stretch; }
+.routine-add-row { display: flex; gap: 6px; }
+.routine-add-row .input { flex: 1; }
+.routine-add-days { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.routine-add-days .day-picker { padding-left: 0; }
+.week-off .week-bar { background: transparent; border: 1px dashed var(--border-strong); height: 6px; }
+
+/* links, hand-in */
+.text-link { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); text-underline-offset: 2px; overflow-wrap: anywhere; }
+.text-link:hover { text-decoration-color: currentColor; }
+.msg.is-mine .text-link { color: inherit; }
+.check-item { cursor: pointer; user-select: none; }
+.check-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg.is-submission { max-width: 94%; }
+.msg.is-submission .msg-bubble { background: var(--green-soft); color: var(--text); border: 1px solid var(--green-strong-soft); border-radius: 12px; }
+.msg.is-submission .text-link { color: var(--accent); }
+.msg-submission-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--green-ink); margin-bottom: 4px; white-space: normal; }
+.finish-task-title { font-weight: 600; font-size: 14.5px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius); }
+.notif-icon-amber { background: var(--amber-soft) !important; color: var(--amber) !important; }
+
 /* employee side */
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 6px; }
 .section-title { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 18px; font-weight: 600; letter-spacing: -.01em; }

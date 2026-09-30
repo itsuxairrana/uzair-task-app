@@ -8,6 +8,8 @@ import { localISO, daysUntil, fmtShortDate } from '../utils/date';
 import { useTeamStore } from '../store/teamStore';
 import { getUser } from '../services/authApi';
 import TaskThread from './TaskThread';
+import CheckItem from './CheckItem';
+import Linkify from './Linkify';
 import Icon from './Icon';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
@@ -122,7 +124,7 @@ export default function TaskCard({ task, onEdit }) {
           <button className="task-title" onClick={() => (totalCount || task.notes ? setExpanded(e => !e) : onEdit(task))}>
             {task.title}
           </button>
-          {task.notes && !expanded && <p className="task-notes">{task.notes}</p>}
+          {task.notes && !expanded && <p className="task-notes"><Linkify text={task.notes} /></p>}
 
           <div className="task-meta">
             <span className={`prio prio-${task.priority}`}>{task.priority}</span>
@@ -174,19 +176,13 @@ export default function TaskCard({ task, onEdit }) {
 
       {expanded && (
         <div className="task-detail">
-          {task.notes && <p className="task-notes task-notes-full">{task.notes}</p>}
+          {task.notes && <p className="task-notes task-notes-full"><Linkify text={task.notes} /></p>}
           {totalCount > 0 && (
             <div className="checklist">
               {milestones.map((m, idx) => {
                 const isNext = !m.done && milestones.slice(0, idx).every(p => p.done);
                 return (
-                  <button key={m.id} className={'check-item' + (m.done ? ' is-done' : '') + (isNext ? ' is-next' : '')} onClick={() => toggleMilestone(task.id, m.id)}>
-                    <span className="check-box">{m.done ? <Icon name="check" size={11} strokeWidth={3} /> : idx + 1}</span>
-                    <span className="check-text">
-                      <span className="check-title">{m.title}</span>
-                      {m.instruction && <span className="check-hint">{m.instruction}</span>}
-                    </span>
-                  </button>
+                  <CheckItem key={m.id} done={m.done} next={isNext} index={idx + 1} title={m.title} hint={m.instruction} onToggle={() => toggleMilestone(task.id, m.id)} />
                 );
               })}
             </div>

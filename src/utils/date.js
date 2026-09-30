@@ -36,3 +36,20 @@ export function timeAgo(ts) {
   if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
   return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+// ── Routine weekdays: `days` is a string of JS weekday digits, 0 = Sunday ──
+export const ALL_DAYS = '0123456';
+export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first
+
+export function appliesOn(days, iso) {
+  return String(days || ALL_DAYS).includes(String(parseISO(iso).getDay()));
+}
+
+export function daysLabel(days) {
+  const d = String(days || ALL_DAYS);
+  if (d === ALL_DAYS) return 'Every day';
+  if (d === '12345') return 'Weekdays';
+  if (d === '06') return 'Weekends';
+  return WEEK_ORDER.filter(n => d.includes(String(n))).map(n => WEEKDAY_SHORT[n]).join(', ');
+}

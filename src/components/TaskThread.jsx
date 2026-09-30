@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchComments, postComment, deleteComment } from '../services/collabApi';
 import { timeAgo, fmtShortDate } from '../utils/date';
 import Icon from './Icon';
+import Linkify from './Linkify';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
 
@@ -98,15 +99,16 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
             const prev = comments[i - 1];
             const grouped = prev && prev.user_id === c.user_id;
             return (
-              <div key={c.id} className={'msg' + (mine ? ' is-mine' : '') + (grouped ? ' is-grouped' : '')}>
-                {!grouped && (
+              <div key={c.id} className={'msg' + (mine ? ' is-mine' : '') + (grouped && c.kind !== 'submission' ? ' is-grouped' : '') + (c.kind === 'submission' ? ' is-submission' : '')}>
+                {(!grouped || c.kind === 'submission') && (
                   <div className="msg-head">
                     <span className="msg-author">{mine ? 'You' : (c.user_name || 'Former member')}</span>
                     <span className="msg-time">{timeAgo(c.created_at)}</span>
                   </div>
                 )}
                 <div className="msg-bubble">
-                  {c.body}
+                  {c.kind === 'submission' && <div className="msg-submission-head"><Icon name="checkCircle" size={14} /> Work handed in</div>}
+                  <Linkify text={c.body} />
                   {mine && <button className="msg-delete" onClick={() => remove(c)} aria-label="Delete message" title="Delete"><Icon name="trash" size={12} /></button>}
                 </div>
               </div>

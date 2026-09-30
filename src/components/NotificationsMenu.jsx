@@ -7,6 +7,8 @@ const TYPE = {
   comment:        { icon: 'message',     tone: 'accent', hint: 'Open conversation' },
   task_assigned:  { icon: 'inbox',       tone: 'accent', hint: 'View task' },
   routine_done:   { icon: 'repeat',      tone: 'green',  hint: 'View daily routine' },
+  routine_missed: { icon: 'alert',       tone: 'amber',  hint: 'View daily routine' },
+  routine_reminder: { icon: 'repeat',    tone: 'amber',  hint: "Open today's routine" },
 };
 
 // Bell + dropdown, shared by the admin shell and the employee dashboard.
@@ -56,7 +58,7 @@ export default function NotificationsMenu({ notifications, onOpen, onMarkRead, o
                   <span className={`notif-icon notif-icon-${t.tone}`}><Icon name={t.icon} size={15} /></span>
                   <span className="notif-body">
                     <span className="notif-msg">{n.message}</span>
-                    <span className="notif-time">{timeAgo(n.created_at)} · {t.hint}</span>
+                    <span className="notif-time">{timeAgo(n.created_at)} · {n.type === 'task_completed' && / and sent /.test(n.message) ? 'View their work' : t.hint}</span>
                   </span>
                   {isUnread && <span className="dot dot-accent" />}
                 </button>

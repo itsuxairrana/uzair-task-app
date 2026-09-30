@@ -5,6 +5,8 @@ import { useUiStore } from '../store/uiStore';
 import { localISO, daysUntil, fmtShortDate, timeAgo } from '../utils/date';
 import NotificationsMenu from './NotificationsMenu';
 import TaskThread from './TaskThread';
+import CheckItem from './CheckItem';
+import Linkify from './Linkify';
 import Icon from './Icon';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
@@ -20,6 +22,7 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
   const [notifications, setNotifications] = useState([]);
   const [threadId, setThreadId] = useState(null);
   const [highlight, setHighlight] = useState(null);
+  const [finishing, setFinishing] = useState(null); // task being marked done
   const taskRefs = useRef({});
   const notifRef = useRef([]); // latest list, for comparisons outside render
   const theme = useUiStore(s => s.theme);
@@ -82,6 +85,10 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
   }
 
   function openNotification(n) {
+    if (n.type === 'routine_reminder') {
+      document.querySelector('.routine-today')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     if (!n.task_id) return;
     setFilter('all');
     setHighlight(n.task_id);
@@ -98,11 +105,12 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
   const closeThread = useCallback(() => setThreadId(null), []);
   const refreshQuiet = useCallback(() => load({ quiet: true }), [load]);
 
-  async function changeStatus(task, status) {
+  async function changeStatus(task, status, handoff) {
     setUpdating(u => ({ ...u, [task.id]: true }));
     try {
-      await updateTaskStatus(task.id, status);
+      await updateTaskStatus(task.id, status, handoff);
       setTasks(ts => ts.map(t => t.id === task.id ? { ...t, status } : t));
+      if (handoff?.report || handoff?.links?.length) load({ quiet: true }); // pick up the new message count
     } catch (e) {
       setError(e.message);
     } finally {
@@ -206,7 +214,7 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
                     <span className={`status-dot status-${task.status}`} />
                     <div className="task-body">
                       <div className="task-title task-title-static">{task.title}</div>
-                      {task.notes && <p className="task-notes task-notes-full">{task.notes}</p>}
+                      {task.notes && <p className="task-notes task-notes-full"><Linkify text={task.notes} /></p>}
                       <div className="task-meta">
                         <span className={`pill pill-${task.status}`}>{STATUS_LABEL[task.status]}</span>
                         <span className={`prio prio-${task.priority}`}>{task.priority}</span>
@@ -236,7 +244,7 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
                         <button className="btn btn-secondary btn-sm" disabled={updating[task.id]} onClick={() => changeStatus(task, 'in_progress')}>Start</button>
                       )}
                       {task.status !== 'done' ? (
-                        <button className="btn btn-primary btn-sm" disabled={updating[task.id]} onClick={() => changeStatus(task, 'done')}>
+                        <button className="btn btn-primary btn-sm" disabled={updating[task.id]} onClick={() => setFinishing(task)}>
                           <Icon name="check" size={14} /> {updating[task.id] ? 'Saving…' : 'Mark done'}
                         </button>
                       ) : (
@@ -248,15 +256,8 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
                     <div className="task-detail">
                       <div className="checklist">
                         {ms.map((m, idx) => {
-                          const isDone = !!Number(m.done);
                           return (
-                            <button key={m.id} className={'check-item' + (isDone ? ' is-done' : '')} onClick={() => toggleMs(task, m)}>
-                              <span className="check-box">{isDone ? <Icon name="check" size={11} strokeWidth={3} /> : idx + 1}</span>
-                              <span className="check-text">
-                                <span className="check-title">{m.title}</span>
-                                {m.instruction && <span className="check-hint">{m.instruction}</span>}
-                              </span>
-                            </button>
+                            <CheckItem key={m.id} done={!!Number(m.done)} index={idx + 1} title={m.title} hint={m.instruction} onToggle={() => toggleMs(task, m)} />
                           );
                         })}
                       </div>
@@ -269,6 +270,13 @@ export default function EmployeeDashboard({ authUser, onLogout }) {
         )}
       </main>
 
+      {finishing && (
+        <FinishTaskModal
+          task={finishing}
+          onCancel={() => setFinishing(null)}
+          onFinish={async handoff => { const t = finishing; setFinishing(null); await changeStatus(t, 'done', handoff); }}
+        />
+      )}
       {threadTask && (
         <TaskThread task={threadTask} me={authUser} onClose={closeThread} onSeen={markThreadSeen} onPosted={refreshQuiet} />
       )}
@@ -337,19 +345,77 @@ function DailyRoutine() {
       </div>
       <div className="checklist">
         {items.map(item => {
-          const isDone = doneIds.has(item.id);
           return (
-            <button key={item.id} className={'check-item' + (isDone ? ' is-done' : '')} onClick={() => toggle(item)}>
-              <span className="check-box">{isDone ? <Icon name="check" size={11} strokeWidth={3} /> : null}</span>
-              <span className="check-text">
-                <span className="check-title">{item.title}</span>
-                {item.notes && <span className="check-hint">{item.notes}</span>}
-              </span>
-            </button>
+            <CheckItem key={item.id} done={doneIds.has(item.id)} title={item.title} hint={item.notes} onToggle={() => toggle(item)} />
           );
         })}
       </div>
       {error && <div className="form-msg form-msg-err">{error}</div>}
     </section>
+  );
+}
+
+// Mark a task done and optionally hand in the work: file links (Drive, Dropbox, Figma…) and a short report.
+function FinishTaskModal({ task, onCancel, onFinish }) {
+  const [links, setLinks]   = useState(['']);
+  const [report, setReport] = useState('');
+  const [busy, setBusy]     = useState(false);
+  const clean = links.map(l => l.trim()).filter(Boolean);
+  const invalid = clean.filter(l => !/^(https?:\/\/|www\.)\S+$/i.test(l));
+
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (invalid.length) return;
+    setBusy(true);
+    await onFinish({ report: report.trim(), links: clean });
+  }
+
+  return (
+    <div className="modal-overlay" onMouseDown={e => e.target === e.currentTarget && onCancel()}>
+      <form className="modal" onSubmit={submit} role="dialog" aria-label="Finish task">
+        <div className="modal-header">
+          <h2>Finish task</h2>
+          <button type="button" className="btn btn-ghost btn-icon" onClick={onCancel} aria-label="Close"><Icon name="x" /></button>
+        </div>
+        <div className="modal-body">
+          <div className="finish-task-title">{task.title}</div>
+          <div className="field">
+            <span className="field-label">Links to your work <span className="muted-small">(optional)</span></span>
+            {links.map((l, i) => (
+              <div key={i} className="input-row">
+                <input
+                  className="input" type="text" inputMode="url" autoComplete="off" value={l} autoFocus={i === 0}
+                  onChange={e => setLinks(ls => ls.map((x, j) => (j === i ? e.target.value : x)))}
+                  placeholder="https://drive.google.com/…"
+                />
+                {links.length > 1 && (
+                  <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => setLinks(ls => ls.filter((_, j) => j !== i))} aria-label="Remove link"><Icon name="x" size={14} /></button>
+                )}
+              </div>
+            ))}
+            {links.length < 10 && (
+              <div><button type="button" className="link-btn" onClick={() => setLinks(ls => [...ls, ''])}><Icon name="plus" size={13} /> Add another link</button></div>
+            )}
+            {invalid.length > 0 && <div className="form-msg form-msg-err">Links should start with https:// (or www.)</div>}
+          </div>
+          <label className="field">
+            <span className="field-label">Report <span className="muted-small">(optional)</span></span>
+            <textarea className="textarea" rows={4} value={report} onChange={e => setReport(e.target.value)} placeholder="What you did, anything Uzair should check…" maxLength={4000} />
+          </label>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+            <button className="btn btn-primary" disabled={busy || invalid.length > 0}>
+              <Icon name="check" size={14} /> {clean.length || report.trim() ? 'Send & mark done' : 'Mark done'}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
   );
 }

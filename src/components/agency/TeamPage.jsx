@@ -4,7 +4,7 @@ import { useTaskStore } from '../../store/taskStore';
 import { useUiStore } from '../../store/uiStore';
 import { useAgencyStore } from '../../store/agencyStore';
 import { deleteTaskFromDB } from '../../services/taskSyncApi';
-import { localISO, daysUntil, fmtShortDate, timeAgo } from '../../utils/date';
+import { localISO, daysUntil, fmtShortDate, timeAgo, appliesOn } from '../../utils/date';
 import { getUser } from '../../services/authApi';
 import TaskForm from '../TaskForm';
 import TaskThread from '../TaskThread';
@@ -126,7 +126,7 @@ export default function TeamPage() {
   const threadTask = threadId && serverTasks.find(t => t.id === threadId);
 
   const routineFor = userId => {
-    const items = routines.filter(r => r.user_id === userId);
+    const items = routines.filter(r => r.user_id === userId && appliesOn(r.days, today));
     const done = routineChecks.filter(c => c.user_id === userId && c.day === today && items.some(r => r.id === c.routine_id)).length;
     return { total: items.length, done };
   };

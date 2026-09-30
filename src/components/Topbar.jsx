@@ -19,12 +19,14 @@ export default function Topbar({ aiOpen, onToggleAi }) {
   function openNotification(n) {
     const store = useTeamStore.getState();
     store.loadServerTasks();
-    if (n.type === 'routine_done') {
+    if (n.type === 'routine_done' || n.type === 'routine_missed') {
       store.loadRoutines();
       const userId = Number(String(n.task_id || '').split(':')[1]) || null;
       navigate('team', { view: 'routine', userId });
     } else {
-      navigate('team', n.task_id ? { taskId: n.task_id, thread: n.type === 'comment' } : null);
+      // Messages and completions that came with work open the conversation straight away.
+      const thread = n.type === 'comment' || (n.type === 'task_completed' && / and sent (their work|a report)/.test(n.message));
+      navigate('team', n.task_id ? { taskId: n.task_id, thread } : null);
     }
   }
 

@@ -35,10 +35,10 @@ export async function fetchDbTasks() {
 
 export const fetchMyTasks = fetchDbTasks;
 
-/** Employee: update task status */
-export async function updateTaskStatus(id, status) {
+/** Employee: update task status. When finishing, `handoff` can carry { report, links } for the admin. */
+export async function updateTaskStatus(id, status, handoff = {}) {
   const res  = await fetch(`${API}/db_tasks.php`, {
-    method: 'PUT', headers: headers(), body: JSON.stringify({ id, status }),
+    method: 'PUT', headers: headers(), body: JSON.stringify({ id, status, ...handoff }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error);

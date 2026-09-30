@@ -18,7 +18,7 @@ function CardHead({ title, sub, to, label = 'View all', right }) {
     </div>
   );
 }
-import { localISO, addDaysISO } from '../../utils/date';
+import { localISO, addDaysISO, appliesOn } from '../../utils/date';
 
 const EMPTY_PLATFORM = { id: '', name: '', color: '#0e76b3', tasks: '' };
 
@@ -446,7 +446,7 @@ function TeamSnapshot() {
       <div className="team-snapshot-row">
         {employees.map((e, i) => {
           const mine = open.filter(t => t.assignee_name === e.name);
-          const items = routines.filter(r => r.user_id === e.id);
+          const items = routines.filter(r => r.user_id === e.id && appliesOn(r.days, today));
           const done = routineChecks.filter(c => c.user_id === e.id && c.day === today && items.some(r => r.id === c.routine_id)).length;
           return (
             <span key={e.id} className="team-snapshot-person">
@@ -462,7 +462,7 @@ function TeamSnapshot() {
         })}
       </div>
       {latest && (
-        <button className={'team-snapshot-latest' + (unread.length ? ' is-unread' : '')} onClick={() => navigate('team', latest.type === 'routine_done' ? { view: 'routine', userId: Number(String(latest.task_id).split(':')[1]) } : latest.task_id ? { taskId: latest.task_id, thread: latest.type === 'comment' } : null)}>
+        <button className={'team-snapshot-latest' + (unread.length ? ' is-unread' : '')} onClick={() => navigate('team', latest.type === 'routine_done' || latest.type === 'routine_missed' ? { view: 'routine', userId: Number(String(latest.task_id).split(':')[1]) } : latest.task_id ? { taskId: latest.task_id, thread: latest.type === 'comment' } : null)}>
           <Icon name="checkCircle" size={14} />
           <span>{latest.message}</span>
           {unread.length > 1 && <span className="badge badge-accent">+{unread.length - 1} more</span>}

@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS routines (
   title      TEXT NOT NULL,
   notes      TEXT DEFAULT '',
   position   INTEGER NOT NULL DEFAULT 0,
+  days       TEXT NOT NULL DEFAULT '0123456', -- weekdays it applies (0 = Sunday)
   active     INTEGER NOT NULL DEFAULT 1, -- removed items are deactivated so history stays intact
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS task_comments (
   task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
   body       TEXT NOT NULL,
+  kind       TEXT NOT NULL DEFAULT 'message', -- 'message' | 'submission' (work handed in with a task)
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
