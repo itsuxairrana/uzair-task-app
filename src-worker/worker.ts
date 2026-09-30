@@ -245,7 +245,10 @@ async function googleTokenRequest(env: Env, params: Record<string, string>): Pro
 
 // GET /api/google/callback — Google redirects the browser here (no Authorization header; user comes from `state`).
 async function handleGoogleCallback(env: Env, url: URL): Promise<Response> {
-  const back = (result: string) => Response.redirect(`${url.origin}/?google=${encodeURIComponent(result)}`, 302);
+  const back = (result: string, detail = "") => {
+    if (result !== "connected") console.log("[google] connect failed:", result, detail);
+    return Response.redirect(`${url.origin}/?google=${encodeURIComponent(result)}`, 302);
+  };
   if (!googleConfigured(env)) return back("not_configured");
   if (url.searchParams.get("error")) return back(url.searchParams.get("error")!);
   const userId = await verifyState(env.JWT_SECRET, url.searchParams.get("state") ?? "");
@@ -254,7 +257,7 @@ async function handleGoogleCallback(env: Env, url: URL): Promise<Response> {
   if (!(await first(env, "SELECT id FROM users WHERE id=?", userId))) return back("invalid_request");
 
   const tok = await googleTokenRequest(env, { grant_type: "authorization_code", code, redirect_uri: googleRedirectUri(url) });
-  if (!tok.ok || !tok.access_token) return back(tok.error || "token_exchange_failed");
+  if (!tok.ok || !tok.access_token) return back(tok.error || "token_exchange_failed", text(tok.error_description));
 
   const existing = await first(env, "SELECT refresh_token FROM google_accounts WHERE user_id=?", userId);
   const refresh = tok.refresh_token || text(existing?.refresh_token);
