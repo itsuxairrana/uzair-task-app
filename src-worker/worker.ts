@@ -1,4 +1,4 @@
-import { AppError, Env, JwtPayload, all, bool, createJWT, first, genPassword, hashPassword, int, isEmail, text, verifyJWT, verifyPassword } from "./util";
+import { AppError, Env, JwtPayload, all, bool, createJWT, first, genPassword, hashPassword, int, isEmail, signState, text, verifyJWT, verifyPassword, verifyState } from "./util";
 
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
@@ -223,6 +223,121 @@ async function handleNotifications(req: Request, env: Env, auth: JwtPayload): Pr
   return errResp("Method not allowed", 405);
 }
 
+// ── /api/google/* — server-side OAuth; refresh token stays in D1 until Disconnect ──
+const GOOGLE_SCOPES = [
+  "openid", "email", "profile",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/tasks",
+  "https://www.googleapis.com/auth/gmail.send",
+].join(" ");
+const googleConfigured = (env: Env) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+const googleRedirectUri = (url: URL) => `${url.origin}/api/google/callback`;
+
+async function googleTokenRequest(env: Env, params: Record<string, string>): Promise<any> {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID!, client_secret: env.GOOGLE_CLIENT_SECRET!, ...params }),
+  });
+  const data = await res.json<any>().catch(() => ({}));
+  return { ok: res.ok, ...data };
+}
+
+// GET /api/google/callback — Google redirects the browser here (no Authorization header; user comes from `state`).
+async function handleGoogleCallback(env: Env, url: URL): Promise<Response> {
+  const back = (result: string) => Response.redirect(`${url.origin}/?google=${encodeURIComponent(result)}`, 302);
+  if (!googleConfigured(env)) return back("not_configured");
+  if (url.searchParams.get("error")) return back(url.searchParams.get("error")!);
+  const userId = await verifyState(env.JWT_SECRET, url.searchParams.get("state") ?? "");
+  const code = url.searchParams.get("code");
+  if (!userId || !code) return back("invalid_request");
+  if (!(await first(env, "SELECT id FROM users WHERE id=?", userId))) return back("invalid_request");
+
+  const tok = await googleTokenRequest(env, { grant_type: "authorization_code", code, redirect_uri: googleRedirectUri(url) });
+  if (!tok.ok || !tok.access_token) return back(tok.error || "token_exchange_failed");
+
+  const existing = await first(env, "SELECT refresh_token FROM google_accounts WHERE user_id=?", userId);
+  const refresh = tok.refresh_token || text(existing?.refresh_token);
+  if (!refresh) return back("no_refresh_token");
+
+  const info = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: `Bearer ${tok.access_token}` } })
+    .then((r) => r.json<any>()).catch(() => ({}));
+  const exp = Math.floor(Date.now() / 1000) + int(tok.expires_in);
+  await env.DB.prepare(
+    `INSERT INTO google_accounts (user_id, refresh_token, access_token, access_exp, email, name, picture, updated_at)
+     VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id) DO UPDATE SET refresh_token=excluded.refresh_token, access_token=excluded.access_token,
+       access_exp=excluded.access_exp, email=excluded.email, name=excluded.name, picture=excluded.picture, updated_at=CURRENT_TIMESTAMP`,
+  ).bind(userId, refresh, tok.access_token, exp, text(info.email), text(info.name), text(info.picture)).run();
+  return back("connected");
+}
+
+async function handleGoogle(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
+  const route = url.pathname.slice("/api/google/".length);
+  const now = Math.floor(Date.now() / 1000);
+
+  if (route === "status" && req.method === "GET") {
+    const row = await first(env, "SELECT email, name, picture FROM google_accounts WHERE user_id=?", auth.sub);
+    return json({
+      configured: googleConfigured(env),
+      connected: !!row,
+      user: row ? { email: row.email, name: row.name, picture: row.picture } : null,
+    });
+  }
+
+  if (!googleConfigured(env)) return errResp("Google isn't configured on the server", 503);
+
+  if (route === "start" && req.method === "POST") {
+    const q = new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID!,
+      redirect_uri: googleRedirectUri(url),
+      response_type: "code",
+      scope: GOOGLE_SCOPES,
+      access_type: "offline",
+      prompt: "consent",
+      include_granted_scopes: "true",
+      state: await signState(env.JWT_SECRET, auth.sub),
+    });
+    return json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${q}` });
+  }
+
+  if (route === "token" && req.method === "GET") {
+    const row = await first(env, "SELECT refresh_token, access_token, access_exp FROM google_accounts WHERE user_id=?", auth.sub);
+    if (!row) return json({ error: "Google not connected", reconnect: true }, 409);
+    if (row.access_token && int(row.access_exp) > now + 120) {
+      return json({ access_token: row.access_token, expires_in: int(row.access_exp) - now });
+    }
+    const tok = await googleTokenRequest(env, { grant_type: "refresh_token", refresh_token: text(row.refresh_token) });
+    if (!tok.ok || !tok.access_token) {
+      if (tok.error === "invalid_grant") {
+        // Revoked in the Google account, or expired — only then do we drop the link.
+        await env.DB.prepare("DELETE FROM google_accounts WHERE user_id=?").bind(auth.sub).run();
+        return json({ error: "Google access was revoked — please reconnect", reconnect: true }, 409);
+      }
+      return errResp("Couldn't refresh Google access — try again", 502);
+    }
+    const exp = now + int(tok.expires_in);
+    await env.DB.prepare("UPDATE google_accounts SET access_token=?, access_exp=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?")
+      .bind(tok.access_token, exp, auth.sub).run();
+    return json({ access_token: tok.access_token, expires_in: int(tok.expires_in) });
+  }
+
+  if (route === "disconnect" && req.method === "POST") {
+    const row = await first(env, "SELECT refresh_token FROM google_accounts WHERE user_id=?", auth.sub);
+    if (row?.refresh_token) {
+      await fetch("https://oauth2.googleapis.com/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: text(row.refresh_token) }),
+      }).catch(() => {});
+    }
+    await env.DB.prepare("DELETE FROM google_accounts WHERE user_id=?").bind(auth.sub).run();
+    return json({ ok: true });
+  }
+
+  return errResp("Not found", 404);
+}
+
 // ── Router ───────────────────────────────────────────────────────────────────
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -239,6 +354,8 @@ export default {
         let res: Response;
         if (url.pathname === "/api/login.php") {
           res = await handleLogin(req, env);
+        } else if (url.pathname === "/api/google/callback" && req.method === "GET") {
+          return await handleGoogleCallback(env, url);
         } else {
           const auth = await readAuth(req, env);
           if (!auth) {
@@ -248,6 +365,7 @@ export default {
           else if (url.pathname === "/api/users.php") res = await handleUsers(req, env, auth, url);
           else if (url.pathname === "/api/db_tasks.php") res = await handleTasks(req, env, auth, url);
           else if (url.pathname === "/api/notifications.php") res = await handleNotifications(req, env, auth);
+          else if (url.pathname.startsWith("/api/google/")) res = await handleGoogle(req, env, auth, url);
           else res = errResp("Not found", 404);
         }
         for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);

@@ -22,8 +22,8 @@ const WORKSPACE_LIST_NAME = {
 // Cache of { listName → listId } to avoid repeated lookups
 const listIdCache = {};
 
-function authHeaders() {
-  const token = getAccessToken();
+async function authHeaders() {
+  const token = await getAccessToken();
   if (!token) throw new Error('Not signed in to Google. Please connect your Google account.');
   return {
     'Authorization': `Bearer ${token}`,
@@ -39,7 +39,7 @@ async function getOrCreateList(listName) {
 
   // Fetch existing lists
   const res = await fetch(`${BASE_URL}/users/@me/lists`, {
-    headers: authHeaders(),
+    headers: await authHeaders(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -57,7 +57,7 @@ async function getOrCreateList(listName) {
   // Create the list
   const createRes = await fetch(`${BASE_URL}/users/@me/lists`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify({ title: listName }),
   });
   if (!createRes.ok) throw new Error(`Failed to create task list "${listName}"`);
@@ -87,7 +87,7 @@ export async function pushTaskToGoogleTasks(task) {
 
   const res = await fetch(`${BASE_URL}/lists/${listId}/tasks`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify(body),
   });
 
@@ -127,7 +127,7 @@ export async function completeGoogleTask(googleTaskId, workspace) {
 
   await fetch(`${BASE_URL}/lists/${listId}/tasks/${googleTaskId}`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify({ status: 'completed' }),
   });
 }
@@ -142,7 +142,7 @@ export async function deleteGoogleTask(googleTaskId, workspace) {
 
   await fetch(`${BASE_URL}/lists/${listId}/tasks/${googleTaskId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: await authHeaders(),
   });
 }
 

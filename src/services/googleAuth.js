@@ -1,203 +1,78 @@
 /**
- * Google OAuth 2.0 — Client-side via Google Identity Services (GIS)
+ * Google connection — server-side OAuth (authorization-code flow).
  *
- * Setup:
- * 1. Go to https://console.cloud.google.com/ → APIs & Services → Credentials
- * 2. Create OAuth 2.0 Client ID (Web Application)
- * 3. Add http://localhost:5173 and your production URL to Authorized JS origins
- * 4. Copy Client ID into VITE_GOOGLE_CLIENT_ID in .env
- * 5. Enable: Google Calendar API, Google Tasks API
+ * The Worker holds the Client ID/secret and stores a long-lived refresh token per
+ * Task OS user in D1, so the connection survives logout, reloads and other devices
+ * until the user clicks Disconnect. The browser only ever receives short-lived
+ * access tokens (fetched from /api/google/token and cached in memory).
  *
- * The GIS script is loaded dynamically. After sign-in, an access token is stored
- * in memory and used by calendarApi.js and tasksApi.js.
+ * Setup: GOOGLE_CLIENT_ID var in wrangler.jsonc, GOOGLE_CLIENT_SECRET via
+ * `wrangler secret put`, redirect URI https://task.uzairvisuals.com/api/google/callback
  */
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/tasks',
-  'https://www.googleapis.com/auth/gmail.send',
-].join(' ');
+import { authHeaders } from './authApi';
 
-let tokenClient = null;
+const API = import.meta.env.VITE_API_URL || '/api';
 
-const GC_ID_KEY      = 'uzair_google_client_id';
-const TOKEN_KEY      = 'uzair_google_token';
-const TOKEN_EXP_KEY  = 'uzair_google_token_exp';
-const WAS_AUTHED_KEY = 'uzair_google_was_authed';
+let status = { configured: false, connected: false, user: null };
+let accessToken = null;
+let tokenExpiry = 0;
 
-// Restore token from localStorage on module load
-let accessToken  = localStorage.getItem(TOKEN_KEY) || null;
-let tokenExpiry  = Number(localStorage.getItem(TOKEN_EXP_KEY)) || null;
-
-/** Save Google Client ID to localStorage so it can be entered in Settings UI. */
-export function setGoogleClientId(id) {
-  const v = id?.trim();
-  if (v) localStorage.setItem(GC_ID_KEY, v);
-  else localStorage.removeItem(GC_ID_KEY);
-}
-
-/** Get stored Google Client ID. */
-export function getStoredGoogleClientId() {
-  return localStorage.getItem(GC_ID_KEY) || '';
-}
-
-/** Get the active Client ID: localStorage → .env */
-function getClientId() {
-  return localStorage.getItem(GC_ID_KEY) || import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-}
-
-/** Load the GIS script if not already loaded. */
-function loadGisScript() {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
-    document.head.appendChild(script);
-  });
-}
-
-/** Initialize the token client (call once on app load). */
-export async function initGoogleAuth() {
-  const clientId = getClientId();
-  if (!clientId) return; // Google auth not configured — silently skip
-
-  await loadGisScript();
-
-  tokenClient = window.google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
-    scope: SCOPES,
-    callback: (tokenResponse) => {
-      if (tokenResponse.error) return;
-      accessToken = tokenResponse.access_token;
-      tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
-      localStorage.setItem(TOKEN_KEY, accessToken);
-      localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
-      localStorage.setItem(WAS_AUTHED_KEY, '1');
-      fetchUserInfo(accessToken);
-    },
-  });
-}
-
-/** Trigger Google sign-in popup. Returns a Promise that resolves when token received. */
-export function signIn() {
-  return new Promise((resolve, reject) => {
-    if (!tokenClient) {
-      reject(new Error('Google Auth not initialized. Set VITE_GOOGLE_CLIENT_ID in .env'));
-      return;
-    }
-    // Override callback to resolve the promise
-    tokenClient.callback = (tokenResponse) => {
-      if (tokenResponse.error) {
-        reject(new Error(tokenResponse.error));
-        return;
-      }
-      accessToken = tokenResponse.access_token;
-      tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
-      localStorage.setItem(TOKEN_KEY, accessToken);
-      localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
-      localStorage.setItem(WAS_AUTHED_KEY, '1');
-      fetchUserInfo(accessToken).then(resolve).catch(resolve);
-    };
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-  });
-}
-
-/** Sign out — revoke token and clear state. */
-export function signOut() {
-  if (accessToken && window.google?.accounts?.oauth2) {
-    window.google.accounts.oauth2.revoke(accessToken);
-  }
-  accessToken = null;
-  tokenExpiry = null;
-  localStorage.removeItem('google_user');
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TOKEN_EXP_KEY);
-  localStorage.removeItem(WAS_AUTHED_KEY);
+function emitChange() {
   window.dispatchEvent(new Event('google_auth_change'));
 }
 
-/** Get the current valid access token, refreshing if needed. */
-export function getAccessToken() {
-  if (accessToken && tokenExpiry && Date.now() < tokenExpiry) {
-    return accessToken;
-  }
-  return null;
-}
-
-/** Check if user is signed in to Google. */
-export function isSignedIn() {
-  return !!getAccessToken();
-}
-
-/** Fetch user profile info and store it. */
-async function fetchUserInfo(token) {
+/** Re-read connection status from the server. */
+export async function refreshGoogleStatus() {
   try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const info = await res.json();
-    localStorage.setItem('google_user', JSON.stringify({
-      name: info.name,
-      email: info.email,
-      picture: info.picture,
-    }));
-    window.dispatchEvent(new Event('google_auth_change'));
-    return info;
-  } catch {
-    window.dispatchEvent(new Event('google_auth_change'));
-  }
+    const res = await fetch(`${API}/google/status`, { headers: authHeaders() });
+    if (res.ok) status = await res.json();
+  } catch { /* offline — keep last known status */ }
+  emitChange();
+  return status;
 }
 
-/** Get stored user profile (name, email, picture). */
-export function getGoogleUser() {
-  try {
-    return JSON.parse(localStorage.getItem('google_user') || 'null');
-  } catch {
+/** Redirects to Google's consent page; comes back to /?google=connected. */
+export async function signIn() {
+  const res = await fetch(`${API}/google/start`, { method: 'POST', headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Could not start Google sign-in');
+  window.location.href = data.url;
+  return new Promise(() => {}); // page is navigating away
+}
+
+/** Disconnect — revokes the refresh token server-side and forgets it. */
+export async function signOut() {
+  await fetch(`${API}/google/disconnect`, { method: 'POST', headers: authHeaders() }).catch(() => {});
+  clearGoogleCache();
+  status = { ...status, connected: false, user: null };
+  emitChange();
+}
+
+/** Forget the in-memory access token (call on app logout). */
+export function clearGoogleCache() {
+  accessToken = null;
+  tokenExpiry = 0;
+  status = { configured: status.configured, connected: false, user: null };
+}
+
+/** A valid access token, fetched/refreshed via the server when needed. */
+export async function getAccessToken() {
+  if (accessToken && Date.now() < tokenExpiry) return accessToken;
+  const res = await fetch(`${API}/google/token`, { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (data.reconnect) {
+      status = { ...status, connected: false, user: null };
+      emitChange();
+    }
     return null;
   }
+  accessToken = data.access_token;
+  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+  return accessToken;
 }
 
-/** Check if user previously connected Google (even if token is now expired). */
-export function hadPreviousAuth() {
-  return !!localStorage.getItem(WAS_AUTHED_KEY);
-}
-
-/**
- * Attempt silent token refresh — calls requestAccessToken with prompt:'' so no popup
- * appears if the user's Google session is still active.
- * Resolves to true if refreshed, false if user must reconnect manually.
- */
-export function attemptSilentRefresh() {
-  return new Promise((resolve) => {
-    if (!tokenClient) { resolve(false); return; }
-    if (isSignedIn()) { resolve(true); return; }
-    if (!hadPreviousAuth()) { resolve(false); return; }
-
-    const timeout = setTimeout(() => resolve(false), 8000);
-
-    tokenClient.callback = (tokenResponse) => {
-      clearTimeout(timeout);
-      if (tokenResponse.error) { resolve(false); return; }
-      accessToken = tokenResponse.access_token;
-      tokenExpiry = Date.now() + (tokenResponse.expires_in - 60) * 1000;
-      localStorage.setItem(TOKEN_KEY, accessToken);
-      localStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
-      localStorage.setItem(WAS_AUTHED_KEY, '1');
-      fetchUserInfo(accessToken).then(() => resolve(true)).catch(() => resolve(true));
-    };
-
-    try {
-      tokenClient.requestAccessToken({ prompt: '' });
-    } catch {
-      clearTimeout(timeout);
-      resolve(false);
-    }
-  });
-}
+export function isSignedIn()        { return status.connected; }
+export function isGoogleConfigured() { return status.configured; }
+export function getGoogleUser()     { return status.user; }

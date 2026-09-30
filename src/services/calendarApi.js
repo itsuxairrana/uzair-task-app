@@ -18,8 +18,8 @@ const PRIORITY_COLOR = {
   low: '7',      // Peacock
 };
 
-function authHeaders() {
-  const token = getAccessToken();
+async function authHeaders() {
+  const token = await getAccessToken();
   if (!token) throw new Error('Not signed in to Google. Please connect your Google account.');
   return {
     'Authorization': `Bearer ${token}`,
@@ -56,7 +56,7 @@ export async function pushTaskToCalendar(task, attendeeEmail = null) {
 
   const response = await fetch(`${BASE_URL}/calendars/${CALENDAR_ID}/events`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify(event),
   });
 
@@ -93,7 +93,7 @@ export async function deleteCalendarEvent(eventId) {
   if (!eventId) return;
   await fetch(`${BASE_URL}/calendars/${CALENDAR_ID}/events/${eventId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: await authHeaders(),
   });
 }
 

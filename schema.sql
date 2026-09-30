@@ -54,3 +54,15 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(ip, at);
+
+-- Google connection per Task OS user (server-side OAuth; refresh token never leaves the Worker).
+CREATE TABLE IF NOT EXISTS google_accounts (
+  user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  refresh_token TEXT NOT NULL,
+  access_token  TEXT,
+  access_exp    INTEGER NOT NULL DEFAULT 0,
+  email         TEXT,
+  name          TEXT,
+  picture       TEXT,
+  updated_at    TEXT DEFAULT CURRENT_TIMESTAMP
+);

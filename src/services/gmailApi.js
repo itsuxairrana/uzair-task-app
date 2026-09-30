@@ -37,7 +37,7 @@ export function getEmployeeEmail(name) {
  * @param {string} recipientName  - employee display name
  */
 export async function sendTaskEmail(task, recipientEmail, recipientName) {
-  const token = getAccessToken();
+  const token = await getAccessToken();
   if (!token) throw new Error('Sign in to Google first (Settings → Google).');
 
   const html = buildTaskEmailHtml(task, recipientName);

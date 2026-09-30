@@ -2,6 +2,8 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   JWT_SECRET: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 }
 
 export class AppError extends Error {
@@ -53,6 +55,24 @@ export function safeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+// ── Signed short-lived OAuth `state` (binds the Google callback to a Task OS user) ──
+export async function signState(secret: string, sub: number, ttlSec = 600): Promise<string> {
+  const body = b64urlEncode(enc.encode(JSON.stringify({ k: "gstate", sub, exp: Math.floor(Date.now() / 1000) + ttlSec })));
+  return `${body}.${b64urlEncode(await hmacSign(secret, `gstate.${body}`))}`;
+}
+export async function verifyState(secret: string, state: string): Promise<number | null> {
+  const [body, sig] = state.split(".");
+  if (!body || !sig) return null;
+  if (!safeEqual(b64urlEncode(await hmacSign(secret, `gstate.${body}`)), sig)) return null;
+  try {
+    const d = JSON.parse(dec.decode(b64urlDecode(body)));
+    if (d.k !== "gstate" || !d.exp || d.exp < Math.floor(Date.now() / 1000)) return null;
+    return int(d.sub) || null;
+  } catch {
+    return null;
+  }
 }
 
 // ── JWT (HS256) ──────────────────────────────────────────────────────────────

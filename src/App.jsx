@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTaskStore } from './store/taskStore';
 import { useAgencyStore } from './store/agencyStore';
-import { initGoogleAuth, signIn, signOut, isSignedIn, getGoogleUser, setGoogleClientId, getStoredGoogleClientId, attemptSilentRefresh, hadPreviousAuth } from './services/googleAuth';
+import { signIn, signOut, isSignedIn, getGoogleUser, isGoogleConfigured, refreshGoogleStatus, clearGoogleCache } from './services/googleAuth';
 import { MODELS, isModelAvailable, getStoredKey, setStoredKey } from './services/aiRouter';
 import { getTeam, saveTeam } from './services/gmailApi';
 import { verifyToken, clearAuth, getUser, changePassword, addTeamMember, fetchTeam } from './services/authApi';
@@ -42,15 +42,13 @@ const KEY_MODELS = [
 
 // ── Settings Modal ────────────────────────────────────────────────────────────
 
-function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout, dbTeam, onAddEmployee }) {
+function SettingsModal({ onClose, googleConnected, googleConfigured, googleUser, googleLoading, onGoogleConnect, onGoogleDisconnect, onLogout, dbTeam, onAddEmployee }) {
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(KEY_MODELS.map(m => [m.id, getStoredKey(m.id)]))
   );
   const [saved, setSaved]       = useState({});
   const [visible, setVisible]   = useState({});
   const [activeTab, setActiveTab] = useState('keys'); // 'keys' | 'google' | 'team' | 'account'
-  const [gcId, setGcId]         = useState(getStoredGoogleClientId);
-  const [gcSaved, setGcSaved]   = useState(false);
   const [team, setTeam]         = useState(getTeam);
   const [newName, setNewName]   = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -75,12 +73,6 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
 
   function toggleVisible(modelId) {
     setVisible(prev => ({ ...prev, [modelId]: !prev[modelId] }));
-  }
-
-  function handleSaveGcId() {
-    setGoogleClientId(gcId);
-    setGcSaved(true);
-    setTimeout(() => setGcSaved(false), 2500);
   }
 
   return (
@@ -190,52 +182,8 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
               <div className="gc-header">
                 <div className="gc-title">🗓 Google Calendar &amp; Tasks</div>
                 <div className="gc-desc">
-                  Sync tasks to Google Calendar and Google Tasks. Paste your Client ID below — no <code>.env</code> edit needed.
+                  Sync tasks to Google Calendar, Google Tasks and Gmail. Connect once — it stays connected (even after logout, on any device) until you click Disconnect.
                 </div>
-              </div>
-
-              {/* ── Client ID input ── */}
-              <div className="gc-client-id-block">
-                <div className="gc-cid-label">
-                  <strong>Google OAuth Client ID</strong>
-                  <span className={'sk-badge ' + (gcId.trim() ? 'sk-badge-ok' : 'sk-badge-missing')}>
-                    {gcId.trim() ? '✓ Set' : 'Not set'}
-                  </span>
-                </div>
-                <div className="sk-input-row">
-                  <input
-                    className="sk-input"
-                    type="text"
-                    value={gcId}
-                    onChange={e => setGcId(e.target.value)}
-                    placeholder="1234567890-abc123.apps.googleusercontent.com"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <button
-                    className={'sk-save-btn' + (gcSaved ? ' sk-saved' : '')}
-                    type="button"
-                    onClick={handleSaveGcId}
-                    disabled={!gcId.trim()}
-                  >
-                    {gcSaved ? '✓ Saved' : 'Save'}
-                  </button>
-                  {gcId.trim() && (
-                    <button className="sk-clear-btn" type="button" onClick={() => { setGcId(''); setGoogleClientId(''); }}>
-                      Clear
-                    </button>
-                  )}
-                </div>
-                {gcSaved && (
-                  <p className="gc-save-hint">✓ Saved! Reload the page once, then click Connect below.</p>
-                )}
-              </div>
-
-              <div className="gc-help-row">
-                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
-                  Get Client ID from Google Cloud Console ↗
-                </a>
-                <span className="gc-help-note">Credentials → OAuth 2.0 Client ID → Web app → add <code>http://localhost:5173</code></span>
               </div>
 
               {/* ── Connection status / button ── */}
@@ -263,14 +211,13 @@ function SettingsModal({ onClose, googleConnected, googleUser, googleLoading, on
                   <button
                     className="gc-connect-btn"
                     onClick={onGoogleConnect}
-                    disabled={googleLoading || !gcId.trim()}
-                    title={!gcId.trim() ? 'Paste your Client ID above first' : ''}
+                    disabled={googleLoading || !googleConfigured}
                   >
                     {googleLoading ? 'Connecting…' : 'Connect Google Account'}
                   </button>
-                  {!gcId.trim() && (
+                  {!googleConfigured && (
                     <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-                      ↑ Paste your Client ID above to enable this button
+                      Google isn't set up on the server yet (Client ID / secret missing).
                     </p>
                   )}
                 </div>
@@ -440,7 +387,7 @@ export default function App() {
   );
   if (!authUser) return <LoginScreen onLogin={setAuthUser} />;
 
-  const handleLogout = () => { clearAuth(); setAuthUser(null); };
+  const handleLogout = () => { clearAuth(); clearGoogleCache(); setAuthUser(null); };
 
   // Employees get their own simple dashboard
   if (authUser.role === 'employee') {
@@ -454,6 +401,7 @@ function AppShell({ authUser, onLogout }) {
   const { setPendingTasks, pendingTasks } = useTaskStore();
   const [googleUser, setGoogleUser]           = useState(getGoogleUser());
   const [googleConnected, setGoogleConnected] = useState(isSignedIn());
+  const [googleConfigured, setGoogleConfigured] = useState(isGoogleConfigured());
   const [googleLoading, setGoogleLoading]     = useState(false);
   const [showConfirm, setShowConfirm]         = useState(false);
   const [chatOpen, setChatOpen]               = useState(true);
@@ -490,23 +438,18 @@ function AppShell({ authUser, onLogout }) {
   };
 
   useEffect(() => {
-    async function initGoogle() {
-      await initGoogleAuth();
-      if (!isSignedIn() && hadPreviousAuth()) {
-        setGoogleLoading(true);
-        const refreshed = await attemptSilentRefresh();
-        if (refreshed) {
-          setGoogleUser(getGoogleUser());
-          setGoogleConnected(true);
-        }
-        setGoogleLoading(false);
-      }
+    // Back from Google's consent page: /?google=connected|error
+    const gParam = new URLSearchParams(window.location.search).get('google');
+    if (gParam) {
+      window.history.replaceState(null, '', window.location.pathname);
+      if (gParam !== 'connected') alert('Google connection failed: ' + gParam);
     }
-    initGoogle();
+    refreshGoogleStatus();
 
     function onAuthChange() {
       setGoogleUser(getGoogleUser());
       setGoogleConnected(isSignedIn());
+      setGoogleConfigured(isGoogleConfigured());
     }
     window.addEventListener('google_auth_change', onAuthChange);
 
@@ -574,8 +517,6 @@ function AppShell({ authUser, onLogout }) {
     setGoogleLoading(true);
     try {
       await signIn();
-      setGoogleUser(getGoogleUser());
-      setGoogleConnected(isSignedIn());
     } catch (err) {
       alert('Google sign-in failed: ' + err.message);
     } finally {
@@ -584,6 +525,7 @@ function AppShell({ authUser, onLogout }) {
   }
 
   function handleGoogleSignOut() {
+    if (!confirm('Disconnect Google? Calendar/Tasks/Gmail sync will stop until you reconnect.')) return;
     signOut();
     setGoogleUser(null);
     setGoogleConnected(false);
@@ -750,6 +692,7 @@ function AppShell({ authUser, onLogout }) {
         <SettingsModal
           onClose={() => setShowSettings(false)}
           googleConnected={googleConnected}
+          googleConfigured={googleConfigured}
           googleUser={googleUser}
           googleLoading={googleLoading}
           onGoogleConnect={handleGoogleSignIn}
