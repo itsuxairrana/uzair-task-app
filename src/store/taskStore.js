@@ -23,8 +23,15 @@ export function isEmployee(name) {
 }
 
 // Keep the server copy in step with the local one: employees only see tasks that live on the server.
+const syncing = new Map(); // task id → the latest save to the server (resolves to true if it worked)
+
+// Wait for a task's server copy to be saved (e.g. before attaching files to it).
+export function whenSynced(id) {
+  return syncing.get(id) ?? Promise.resolve(false);
+}
+
 function syncAssignment(before, after) {
-  if (after && isEmployee(after.assigned_to)) syncTask(after);
+  if (after && isEmployee(after.assigned_to)) syncing.set(after.id, syncTask(after));
   else if (before && isEmployee(before.assigned_to)) deleteTaskFromDB(before.id).catch(() => {});
 }
 

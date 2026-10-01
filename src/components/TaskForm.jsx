@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { useTaskStore, isEmployee } from '../store/taskStore';
+import { useTaskStore, isEmployee, whenSynced } from '../store/taskStore';
+import { uploadFile, postComment, MAX_FILE_MB } from '../services/collabApi';
+import { AttachButton, PendingFiles } from './Attachments';
 import { getTeam } from '../services/gmailApi';
 import Icon from './Icon';
 import TimeInput from './TimeInput';
@@ -24,6 +26,10 @@ export default function TaskForm({ task, defaults, onClose }) {
   const [form, setForm] = useState(() => task ? { ...EMPTY, ...task } : { ...EMPTY, ...defaults });
   const [milestones, setMilestones] = useState(() => (task?.milestones || []).map(m => ({ ...m })));
   const [newMs, setNewMs] = useState({ title: '', instruction: '' });
+  // Files are kept in the browser until save, then uploaded to the task's conversation.
+  const [files, setFiles] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [teamMembers, setTeamMembers] = useState(() => ['Uzair', ...getTeam().map(m => m.name)]);
 
   useEffect(() => {
@@ -52,17 +58,51 @@ export default function TaskForm({ task, defaults, onClose }) {
     setNewMs({ title: '', instruction: '' });
   }
 
-  function handleSubmit(e) {
+  function pickFiles(list) {
+    const fresh = [...list].slice(0, 10 - files.length).map((f, i) => ({
+      key: `${Date.now()}-${i}-${f.name}`, file: f, name: f.name, size: f.size, progress: 0,
+      status: f.size > MAX_FILE_MB * 1024 * 1024 || !f.size ? 'error' : 'ready',
+      error: !f.size ? 'Empty file' : f.size > MAX_FILE_MB * 1024 * 1024 ? `Over ${MAX_FILE_MB} MB` : '',
+    }));
+    setFiles(cur => [...cur, ...fresh]);
+  }
+
+  async function uploadAll(taskId) {
+    const ready = files.filter(f => f.status === 'ready');
+    if (!ready.length) return;
+    setSaving(true);
+    setSaveError('');
+    if (!(await whenSynced(taskId))) throw new Error("The task couldn't be saved to the server, so the files weren't sent.");
+    const ids = [];
+    for (const it of ready) {
+      setFiles(cur => cur.map(f => (f.key === it.key ? { ...f, status: 'uploading' } : f)));
+      const up = await uploadFile(taskId, it.file, p => setFiles(cur => cur.map(f => (f.key === it.key ? { ...f, progress: p } : f))));
+      ids.push(up.id);
+      setFiles(cur => cur.map(f => (f.key === it.key ? { ...f, status: 'done' } : f)));
+    }
+    await postComment(taskId, '', ids);
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.title.trim()) return;
+    if (!form.title.trim() || saving) return;
     // A step typed but not yet added is almost always meant to be kept.
     const pending = newMs.title.trim() ? [{ id: uuidv4(), title: newMs.title.trim(), instruction: newMs.instruction.trim(), done: false }] : [];
     const payload = { ...form, title: form.title.trim(), milestones: [...milestones.filter(m => m.title.trim()), ...pending] };
     // Tasks created on another device exist only on the server — adopt them locally with the same id.
     const existsLocally = task && useTaskStore.getState().tasks.some(t => t.id === task.id);
-    if (existsLocally) updateTask(task.id, payload);
-    else addTask(task ? { ...payload, id: task.id } : payload);
-    onClose();
+    const sendFiles = isEmployee(form.assigned_to) && files.some(f => f.status === 'ready');
+    const id = task?.id || uuidv4();
+    if (existsLocally) updateTask(id, payload);
+    else addTask({ ...payload, id });
+    if (!sendFiles) return onClose();
+    try {
+      await uploadAll(id);
+      onClose();
+    } catch (err) {
+      setSaving(false);
+      setSaveError(`Task saved, but the files didn't upload: ${err.message} You can attach them in the task's conversation.`);
+    }
   }
 
   const assigneeOptions = teamMembers.includes(form.assigned_to) || !form.assigned_to ? teamMembers : [...teamMembers, form.assigned_to];
@@ -184,9 +224,27 @@ export default function TaskForm({ task, defaults, onClose }) {
             </div>
           </div>
 
+          <div className="field">
+            <span className="field-label">Files {files.length > 0 && <span className="count">{files.length}</span>}</span>
+            {isEmployee(form.assigned_to) ? (
+              <>
+                <PendingFiles items={files} onRemove={it => setFiles(cur => cur.filter(f => f.key !== it.key))} />
+                {files.length < 10 && !saving && <div><AttachButton onFiles={pickFiles} className="link-btn" label="Attach files" /></div>}
+                {files.length > 0 && <div className="muted-small">Sent to {form.assigned_to} in the task's conversation when you save (up to {MAX_FILE_MB} MB each).</div>}
+              </>
+            ) : (
+              <div className="muted-small">Assign the task to a team member to attach files for them.</div>
+            )}
+          </div>
+          {saveError && <div className="form-msg form-msg-err">{saveError}</div>}
+
           <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">{task ? 'Save changes' : 'Create task'}</button>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>{saveError ? 'Close' : 'Cancel'}</button>
+            {!saveError && (
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? 'Uploading files…' : task ? 'Save changes' : 'Create task'}
+              </button>
+            )}
           </div>
         </form>
       </div>
