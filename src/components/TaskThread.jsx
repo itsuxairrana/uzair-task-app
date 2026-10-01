@@ -3,6 +3,8 @@ import { fetchComments, postComment, deleteComment } from '../services/collabApi
 import { timeAgo, fmtShortDate } from '../utils/date';
 import Icon from './Icon';
 import Linkify from './Linkify';
+import { AttachButton, PendingFiles, FileList } from './Attachments';
+import useAttachments from './useAttachments';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
 
@@ -13,6 +15,8 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
   const [error, setError]       = useState('');
   const [draft, setDraft]       = useState('');
   const [sending, setSending]   = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const att = useAttachments(task.id);
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const taskId = task.id;
@@ -44,11 +48,12 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
   async function send(e) {
     e?.preventDefault();
     const body = draft.trim();
-    if (!body || sending) return;
+    if ((!body && !att.ids.length) || sending || att.uploading) return;
     setSending(true);
     try {
-      await postComment(taskId, body);
+      await postComment(taskId, body, att.ids);
       setDraft('');
+      att.clear();
       await load();
       onPosted?.(taskId);
     } catch (err) {
@@ -69,7 +74,12 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
   return (
     <>
       <div className="scrim scrim-drawer" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label={`Conversation: ${task.title}`}>
+      <aside
+        className={'drawer' + (dragging ? ' is-dropping' : '')} role="dialog" aria-label={`Conversation: ${task.title}`}
+        onDragOver={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
+        onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); att.add(e.dataTransfer.files); } setDragging(false); }}
+      >
         <div className="drawer-head">
           <div className="drawer-head-main">
             <div className="drawer-kicker"><Icon name="message" size={13} /> Conversation</div>
@@ -108,7 +118,8 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
                 )}
                 <div className="msg-bubble">
                   {c.kind === 'submission' && <div className="msg-submission-head"><Icon name="checkCircle" size={14} /> Work handed in</div>}
-                  <Linkify text={c.body} />
+                  {c.body && <Linkify text={c.body} />}
+                  <FileList files={c.files} />
                   {mine && <button className="msg-delete" onClick={() => remove(c)} aria-label="Delete message" title="Delete"><Icon name="trash" size={12} /></button>}
                 </div>
               </div>
@@ -118,17 +129,25 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
         </div>
 
         <form className="thread-composer" onSubmit={send}>
+          {(att.items.length > 0 || att.notice) && (
+            <div className="thread-composer-files">
+              <PendingFiles items={att.items} onRemove={att.remove} />
+              {att.notice && <div className="muted-small">{att.notice}</div>}
+            </div>
+          )}
+          <AttachButton onFiles={att.add} disabled={sending} />
           <textarea
             ref={inputRef}
             className="textarea thread-input"
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) send(e); }}
-            placeholder="Write a message…  (Enter to send, Shift+Enter for a new line)"
+            onPaste={e => { if (e.clipboardData.files.length) { e.preventDefault(); att.add(e.clipboardData.files); } }}
+            placeholder="Write a message, or drop/paste files…"
             rows={2}
             maxLength={4000}
           />
-          <button className="btn btn-primary btn-icon" disabled={!draft.trim() || sending} aria-label="Send" title="Send">
+          <button className="btn btn-primary btn-icon" disabled={(!draft.trim() && !att.ids.length) || sending || att.uploading} aria-label="Send" title={att.uploading ? 'Waiting for uploads…' : 'Send'}>
             <Icon name="send" size={16} />
           </button>
         </form>

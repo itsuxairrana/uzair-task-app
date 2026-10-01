@@ -766,7 +766,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .msg-delete { position: absolute; top: 50%; left: -30px; transform: translateY(-50%); width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--text-3); opacity: 0; transition: opacity var(--t); }
 .msg:hover .msg-delete, .msg-delete:focus-visible { opacity: 1; }
 .msg-delete:hover { color: var(--red); background: var(--red-soft); }
-.thread-composer { display: flex; align-items: flex-end; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); background: var(--surface); }
+.thread-composer { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); background: var(--surface); }
 .thread-input { flex: 1; min-height: 42px; max-height: 160px; resize: none; }
 .thread-btn { gap: 4px; padding: 0 8px; }
 .thread-btn span { font-family: var(--font-mono); font-size: 11.5px; }
@@ -933,3 +933,30 @@ button.chip:hover { border-color: var(--border-strong); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ── Attachments ── */
+.thread-composer-files { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; }
+.drawer.is-dropping .thread { outline: 2px dashed var(--accent); outline-offset: -8px; background: var(--accent-soft); }
+.file-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; white-space: normal; }
+.msg-bubble > .file-list:first-child, .msg-submission-head + .file-list { margin-top: 0; }
+.file-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.file-chip { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12.5px; line-height: 1.3; text-align: left; cursor: pointer; }
+.file-chip:hover { border-color: var(--accent); }
+.file-chip .icon { color: var(--text-3); flex: none; }
+.file-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; font-weight: 500; }
+.file-chip-size { color: var(--text-3); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.file-chip.is-pending { cursor: default; background: var(--surface-2); padding-right: 4px; }
+.file-chip.is-pending:hover { border-color: var(--border); }
+.file-chip.is-error { border-color: var(--red); background: var(--red-soft); }
+.file-chip.is-error .icon, .file-chip.is-error .file-chip-size { color: var(--red); }
+.file-chip-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); transition: width .2s; }
+.file-chip-x { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: var(--text-3); flex: none; }
+.file-chip-x:hover { background: var(--red-soft); color: var(--red); }
+.msg.is-mine .file-chip { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .28); color: inherit; }
+.msg.is-mine .file-chip .icon, .msg.is-mine .file-chip-size { color: inherit; opacity: .8; }
+.msg.is-mine .file-chip:hover { border-color: rgba(255, 255, 255, .7); }
+.file-thumbs { display: flex; flex-wrap: wrap; gap: 6px; }
+.file-thumb { width: 140px; height: 104px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); padding: 0; cursor: zoom-in; }
+.file-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.file-thumb-ph { display: grid; place-items: center; width: 100%; height: 100%; color: var(--text-3); }
+@media (max-width: 640px) { .file-chip-name { max-width: 150px; } .file-thumb { width: 112px; height: 84px; } }

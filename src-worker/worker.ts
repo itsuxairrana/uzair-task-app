@@ -216,11 +216,14 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
           // Optional hand-off: a short report and links to the files/deliverables.
           const report = text(b.report).slice(0, 4000);
           const links = (Array.isArray(b.links) ? b.links : []).map(toHttpUrl).filter(Boolean).slice(0, 10) as string[];
+          const fileIds = pendingFileIds(b.file_ids);
           let msg = `${auth.name} completed task: "${t.title}"`;
-          if (report || links.length) {
+          if (report || links.length || fileIds.length) {
             const body = [report, ...links].filter(Boolean).join("\n");
-            await env.DB.prepare("INSERT INTO task_comments (task_id, user_id, body, kind) VALUES (?,?,?,'submission')").bind(id, auth.sub, body).run();
-            msg += links.length ? ` and sent their work (${links.length} link${links.length > 1 ? "s" : ""})` : " and sent a report";
+            const r = await env.DB.prepare("INSERT INTO task_comments (task_id, user_id, body, kind) VALUES (?,?,?,'submission')").bind(id, auth.sub, body).run();
+            const files = await attachFiles(env, auth, id, Number(r.meta.last_row_id), fileIds);
+            const parts = [plural(links.length, "link"), plural(files, "file")].filter(Boolean);
+            msg += parts.length ? ` and sent their work (${parts.join(", ")})` : " and sent a report";
           }
           await notify(env, Number(t.created_by), "task_completed", msg, id);
         }
@@ -235,6 +238,7 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
     if (!isAdmin) return errResp("Forbidden", 403);
     const id = url.searchParams.get("id");
     if (!id) return errResp("Task ID required");
+    await deleteFiles(env, "SELECT id, r2_key FROM task_files WHERE task_id=?", id);
     await env.DB.prepare("DELETE FROM tasks WHERE id=?").bind(id).run();
     return json({ ok: true });
   }
@@ -376,6 +380,8 @@ async function handleComments(req: Request, env: Env, auth: JwtPayload, url: URL
     const comments = await all(env,
       "SELECT c.id, c.task_id, c.user_id, c.body, c.kind, c.created_at, u.name AS user_name, u.role AS user_role FROM task_comments c LEFT JOIN users u ON u.id=c.user_id WHERE c.task_id=? ORDER BY c.id ASC",
       taskId);
+    const files = await all(env, "SELECT id, comment_id, name, size, type FROM task_files WHERE task_id=? AND comment_id IS NOT NULL ORDER BY id", taskId);
+    for (const c of comments) c.files = files.filter((f) => f.comment_id === c.id);
     return json({ comments });
   }
 
@@ -383,13 +389,19 @@ async function handleComments(req: Request, env: Env, auth: JwtPayload, url: URL
     const b = await req.json<any>().catch(() => ({}));
     const taskId = text(b.task_id);
     const body = text(b.body).slice(0, 4000);
-    if (!taskId || !body) return errResp("Message is empty");
+    const fileIds = pendingFileIds(b.file_ids);
+    if (!taskId || (!body && !fileIds.length)) return errResp("Message is empty");
     const t = await canSeeTask(env, auth, taskId);
     if (!t) return errResp("Task not found", 404);
     const r = await env.DB.prepare("INSERT INTO task_comments (task_id, user_id, body) VALUES (?,?,?)").bind(taskId, auth.sub, body).run();
+    const files = await attachFiles(env, auth, taskId, Number(r.meta.last_row_id), fileIds);
+    if (!body && !files) {
+      await env.DB.prepare("DELETE FROM task_comments WHERE id=?").bind(r.meta.last_row_id).run();
+      return errResp("Those files are no longer available — attach them again");
+    }
 
     // Notify the other side: admin → assigned employee, employee → the admin who created the task.
-    const snippet = body.length > 80 ? body.slice(0, 77) + "…" : body;
+    const snippet = body ? (body.length > 80 ? body.slice(0, 77) + "…" : body) : `sent ${plural(files, "file")}`;
     const recipient = auth.role === "admin" ? t.assigned_user_id : t.created_by;
     if (recipient && Number(recipient) !== auth.sub) {
       await notify(env, Number(recipient), "comment", `${auth.name} on "${t.title}": ${snippet}`, taskId);
@@ -401,11 +413,99 @@ async function handleComments(req: Request, env: Env, auth: JwtPayload, url: URL
     const id = int(url.searchParams.get("id"));
     const c = await first(env, "SELECT user_id FROM task_comments WHERE id=?", id);
     if (!c || Number(c.user_id) !== auth.sub) return errResp("You can only delete your own messages", 403);
+    await deleteFiles(env, "SELECT id, r2_key FROM task_files WHERE comment_id=?", id);
     await env.DB.prepare("DELETE FROM task_comments WHERE id=?").bind(id).run();
     return json({ ok: true });
   }
 
   return errResp("Method not allowed", 405);
+}
+
+// ── /api/files — attachments on task messages, stored in R2 ──────────────────
+// Upload first (POST, raw body), then send the returned ids with a message or hand-in.
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_FILES = 10;
+// Types a browser may show inline. Everything else (html, svg, …) is served as a download.
+const INLINE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain"]);
+
+const plural = (n: number, word: string) => (n ? `${n} ${word}${n > 1 ? "s" : ""}` : "");
+const pendingFileIds = (v: unknown) => (Array.isArray(v) ? [...new Set(v.map(int).filter((n) => n > 0))].slice(0, MAX_FILES) : []);
+
+// Link this user's not-yet-sent uploads on this task to a message. Returns how many were linked.
+async function attachFiles(env: Env, auth: JwtPayload, taskId: string, commentId: number, ids: number[]) {
+  if (!ids.length) return 0;
+  const r = await env.DB.prepare(
+    `UPDATE task_files SET comment_id=? WHERE task_id=? AND user_id=? AND comment_id IS NULL AND id IN (${ids.map(() => "?").join(",")})`,
+  ).bind(commentId, taskId, auth.sub, ...ids).run();
+  return r.meta.changes ?? 0;
+}
+
+async function deleteFiles(env: Env, sql: string, ...args: unknown[]) {
+  const rows = await all(env, sql, ...args);
+  if (!rows.length) return;
+  if (env.FILES) await env.FILES.delete(rows.map((f) => String(f.r2_key)));
+  for (const f of rows) await env.DB.prepare("DELETE FROM task_files WHERE id=?").bind(f.id).run();
+}
+
+function cleanFileName(v: unknown) {
+  const name = text(v).replace(/[\\/\u0000-\u001f"]/g, "_").slice(0, 180);
+  return name || "file";
+}
+
+async function handleFiles(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
+  if (!env.FILES) return errResp("File uploads aren't set up yet.", 503);
+  const id = int(url.pathname.split("/")[3]);
+
+  if (req.method === "POST" && !id) {
+    const taskId = text(url.searchParams.get("task_id"));
+    if (!taskId || !(await canSeeTask(env, auth, taskId))) return errResp("Task not found", 404);
+    const declared = int(req.headers.get("Content-Length"));
+    if (declared > MAX_FILE_BYTES) return errResp("Files can be up to 25 MB", 413);
+    const data = await req.arrayBuffer();
+    if (!data.byteLength) return errResp("The file is empty");
+    if (data.byteLength > MAX_FILE_BYTES) return errResp("Files can be up to 25 MB", 413);
+    const name = cleanFileName(url.searchParams.get("name"));
+    const type = text(req.headers.get("Content-Type")).split(";")[0].toLowerCase().slice(0, 100) || "application/octet-stream";
+    const key = `tasks/${taskId}/${crypto.randomUUID()}`;
+    await env.FILES.put(key, data, { httpMetadata: { contentType: type } });
+    const r = await env.DB.prepare("INSERT INTO task_files (task_id, user_id, name, size, type, r2_key) VALUES (?,?,?,?,?,?)")
+      .bind(taskId, auth.sub, name, data.byteLength, type, key).run();
+    return json({ file: { id: r.meta.last_row_id, name, size: data.byteLength, type } }, 201);
+  }
+
+  const f = id ? await first(env, "SELECT * FROM task_files WHERE id=?", id) : null;
+  if (!f || !(await canSeeTask(env, auth, String(f.task_id)))) return errResp("File not found", 404);
+
+  if (req.method === "GET") {
+    const obj = await env.FILES.get(String(f.r2_key));
+    if (!obj) return errResp("File not found", 404);
+    const type = String(f.type);
+    const inline = INLINE_TYPES.has(type);
+    return new Response(obj.body, {
+      headers: {
+        "Content-Type": inline ? type : "application/octet-stream",
+        "Content-Length": String(obj.size),
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(String(f.name))}`,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; sandbox",
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  }
+
+  // Remove an upload that hasn't been sent yet (sent files go away with their message).
+  if (req.method === "DELETE") {
+    if (Number(f.user_id) !== auth.sub || f.comment_id != null) return errResp("You can only remove files you haven't sent yet", 403);
+    await deleteFiles(env, "SELECT id, r2_key FROM task_files WHERE id=?", id);
+    return json({ ok: true });
+  }
+
+  return errResp("Method not allowed", 405);
+}
+
+// Uploads attached in the composer but never sent.
+async function cleanupUnsentFiles(env: Env) {
+  await deleteFiles(env, "SELECT id, r2_key FROM task_files WHERE comment_id IS NULL AND created_at < datetime('now', '-1 day')");
 }
 
 // ── /api/google/* — server-side OAuth; refresh token stays in D1 until Disconnect ──
@@ -605,6 +705,7 @@ async function eveningRoutineCheck(env: Env) {
 export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(eveningRoutineCheck(env));
+    ctx.waitUntil(cleanupUnsentFiles(env).catch((e) => console.error("[uv-tasks] file cleanup failed:", e)));
   },
 
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -635,6 +736,7 @@ export default {
           else if (url.pathname.startsWith("/api/google/")) res = await handleGoogle(req, env, auth, url);
           else if (url.pathname === "/api/routines" || url.pathname.startsWith("/api/routines/")) res = await handleRoutines(req, env, auth, url);
           else if (url.pathname === "/api/comments") res = await handleComments(req, env, auth, url);
+          else if (url.pathname === "/api/files" || url.pathname.startsWith("/api/files/")) res = await handleFiles(req, env, auth, url);
           else if (url.pathname === "/api/attendance" || url.pathname.startsWith("/api/attendance/")) res = await handleAttendance(req, env, auth, url);
           else res = errResp("Not found", 404);
         }

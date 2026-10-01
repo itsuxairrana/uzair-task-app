@@ -7,6 +7,8 @@ import NotificationsMenu from './NotificationsMenu';
 import TaskThread from './TaskThread';
 import CheckItem from './CheckItem';
 import Linkify from './Linkify';
+import { AttachButton, PendingFiles } from './Attachments';
+import useAttachments from './useAttachments';
 import Icon from './Icon';
 
 const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', done: 'Done' };
@@ -379,6 +381,7 @@ function DailyRoutine() {
 
 // Mark a task done and optionally hand in the work: file links (Drive, Dropbox, Figma…) and a short report.
 function FinishTaskModal({ task, onCancel, onFinish }) {
+  const att = useAttachments(task.id);
   const [links, setLinks]   = useState(['']);
   const [report, setReport] = useState('');
   const [busy, setBusy]     = useState(false);
@@ -393,9 +396,11 @@ function FinishTaskModal({ task, onCancel, onFinish }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (invalid.length) return;
+    if (invalid.length || att.uploading) return;
     setBusy(true);
-    await onFinish({ report: report.trim(), links: clean });
+    const fileIds = att.ids;
+    att.clear(); // the files now go with the hand-in, so closing the modal mustn't remove them
+    await onFinish({ report: report.trim(), links: clean, file_ids: fileIds });
   }
 
   return (
@@ -426,14 +431,20 @@ function FinishTaskModal({ task, onCancel, onFinish }) {
             )}
             {invalid.length > 0 && <div className="form-msg form-msg-err">Links should start with https:// (or www.)</div>}
           </div>
+          <div className="field">
+            <span className="field-label">Files <span className="muted-small">(optional, up to 25 MB each)</span></span>
+            <PendingFiles items={att.items} onRemove={att.remove} />
+            {att.notice && <div className="muted-small">{att.notice}</div>}
+            <div><AttachButton onFiles={att.add} className="link-btn" label="Attach files" /></div>
+          </div>
           <label className="field">
             <span className="field-label">Report <span className="muted-small">(optional)</span></span>
             <textarea className="textarea" rows={4} value={report} onChange={e => setReport(e.target.value)} placeholder="What you did, anything Uzair should check…" maxLength={4000} />
           </label>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
-            <button className="btn btn-primary" disabled={busy || invalid.length > 0}>
-              <Icon name="check" size={14} /> {clean.length || report.trim() ? 'Send & mark done' : 'Mark done'}
+            <button className="btn btn-primary" disabled={busy || invalid.length > 0 || att.uploading}>
+              <Icon name="check" size={14} /> {att.uploading ? 'Uploading…' : clean.length || report.trim() || att.ids.length ? 'Send & mark done' : 'Mark done'}
             </button>
           </div>
         </div>

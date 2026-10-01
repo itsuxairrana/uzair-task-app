@@ -22,6 +22,8 @@
       "database_id": "5c772242-c59d-4228-b79e-78b87c873373"
     }
   ],
+  // Task attachments (messages and work hand-ins).
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "uv-task-files" }],
   // 14:00 UTC = 7pm Pakistan time: evening check on unfinished daily routines.
   "triggers": { "crons": ["0 14 * * *"] },
   "routes": [{ "pattern": "task.uzairvisuals.com", "custom_domain": true }]
