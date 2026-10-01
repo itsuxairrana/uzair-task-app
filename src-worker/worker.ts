@@ -425,6 +425,9 @@ async function handleComments(req: Request, env: Env, auth: JwtPayload, url: URL
 // Upload first (POST, raw body), then send the returned ids with a message or hand-in.
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_FILES = 10;
+// Stay inside R2's free tier (10 GB stored, 1M uploads/month) with room to spare, so it never bills.
+const STORAGE_CAP_BYTES = 9 * 1024 ** 3;
+const MONTHLY_UPLOAD_CAP = 500_000;
 // Types a browser may show inline. Everything else (html, svg, …) is served as a download.
 const INLINE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain"]);
 
@@ -464,6 +467,10 @@ async function handleFiles(req: Request, env: Env, auth: JwtPayload, url: URL): 
     const data = await req.arrayBuffer();
     if (!data.byteLength) return errResp("The file is empty");
     if (data.byteLength > MAX_FILE_BYTES) return errResp("Files can be up to 25 MB", 413);
+    const usage = await first(env,
+      "SELECT COALESCE(SUM(size),0) AS bytes, (SELECT COUNT(*) FROM task_files WHERE created_at >= strftime('%Y-%m-01','now')) AS month_uploads FROM task_files");
+    if (Number(usage?.bytes) + data.byteLength > STORAGE_CAP_BYTES) return errResp("File storage is full (9 GB). Delete old tasks or messages with files to free space.", 507);
+    if (Number(usage?.month_uploads) >= MONTHLY_UPLOAD_CAP) return errResp("Monthly upload limit reached — try again next month.", 429);
     const name = cleanFileName(url.searchParams.get("name"));
     const type = text(req.headers.get("Content-Type")).split(";")[0].toLowerCase().slice(0, 100) || "application/octet-stream";
     const key = `tasks/${taskId}/${crypto.randomUUID()}`;
