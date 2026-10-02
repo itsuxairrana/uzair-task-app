@@ -1,4 +1,5 @@
-import { AppError, Env, JwtPayload, all, bool, createJWT, first, genPassword, hashPassword, int, isEmail, signState, text, verifyJWT, verifyPassword, verifyState } from "./util";
+import { pushConfigured, pushToUser } from "./push";
+import { AppError, b64urlDecode, Env, JwtPayload, all, bool, createJWT, first, genPassword, hashPassword, int, isEmail, signState, text, verifyJWT, verifyPassword, verifyState } from "./util";
 
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
@@ -138,8 +139,19 @@ const COMMENT_STATS = `(SELECT COUNT(*) FROM task_comments c WHERE c.task_id=t.i
   (SELECT MAX(c.created_at) FROM task_comments c WHERE c.task_id=t.id) AS last_comment_at`;
 
 // `key` goes in notifications.task_id: a task id, or e.g. "routine:<user>:<day>".
+const PUSH_TITLE: Record<string, string> = {
+  comment: "New message",
+  task_assigned: "New task assigned",
+  task_completed: "Task update",
+  routine_done: "Routine completed",
+  routine_missed: "Routine not finished",
+  routine_reminder: "Daily routine reminder",
+};
+
 async function notify(env: Env, userId: number, type: string, message: string, key: string | null = null) {
   await env.DB.prepare("INSERT INTO notifications (user_id, type, message, task_id) VALUES (?,?,?,?)").bind(userId, type, message, key).run();
+  // Also alert the person's phone/desktop if they turned that on. A push problem never fails the request.
+  await pushToUser(env, userId, PUSH_TITLE[type] ?? "Task OS", message, "/", key ? `${type}:${key}` : type).catch(() => {});
 }
 
 // ── /api/db_tasks.php ─────────────────────────────────────────────────────────
@@ -167,8 +179,9 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
     }
 
     const exists = await first(env, "SELECT id, assigned_user_id FROM tasks WHERE id=?", b.id);
-    if (assigneeId && (!exists || Number(exists.assigned_user_id) !== assigneeId)) {
-      await notify(env, assigneeId, "task_assigned", `${auth.name} assigned you: "${text(b.title)}"`, b.id);
+    const newlyAssigned = !!assigneeId && (!exists || Number(exists.assigned_user_id) !== assigneeId);
+    if (newlyAssigned) {
+      await notify(env, assigneeId!, "task_assigned", `${auth.name} assigned you: "${text(b.title)}"`, b.id);
     }
     if (exists) {
       await env.DB.prepare(
@@ -190,6 +203,8 @@ async function handleTasks(req: Request, env: Env, auth: JwtPayload, url: URL): 
         await env.DB.batch(stmts);
       }
     }
+    // Email the employee too (sent from the admin's connected Gmail). A mail problem never blocks saving.
+    if (newlyAssigned) await emailAssignment(env, userId, auth.name, assigneeId!, b).catch((e) => console.error("[uv-tasks] assignment email failed:", e));
     return json({ ok: true });
   }
 
@@ -567,9 +582,28 @@ async function handleGoogleCallback(env: Env, url: URL): Promise<Response> {
   return back("connected");
 }
 
+// A valid Google access token for this user (refreshing it from the stored refresh token when needed).
+async function googleAccessToken(env: Env, userId: number): Promise<{ token: string; expires_in: number } | { error: string; status: number; reconnect?: boolean }> {
+  const now = Math.floor(Date.now() / 1000);
+  const row = await first(env, "SELECT refresh_token, access_token, access_exp FROM google_accounts WHERE user_id=?", userId);
+  if (!row) return { error: "Google not connected", status: 409, reconnect: true };
+  if (row.access_token && int(row.access_exp) > now + 120) return { token: String(row.access_token), expires_in: int(row.access_exp) - now };
+  const tok = await googleTokenRequest(env, { grant_type: "refresh_token", refresh_token: text(row.refresh_token) });
+  if (!tok.ok || !tok.access_token) {
+    if (tok.error === "invalid_grant") {
+      // Revoked in the Google account, or expired — only then do we drop the link.
+      await env.DB.prepare("DELETE FROM google_accounts WHERE user_id=?").bind(userId).run();
+      return { error: "Google access was revoked — please reconnect", status: 409, reconnect: true };
+    }
+    return { error: "Couldn't refresh Google access — try again", status: 502 };
+  }
+  await env.DB.prepare("UPDATE google_accounts SET access_token=?, access_exp=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?")
+    .bind(tok.access_token, now + int(tok.expires_in), userId).run();
+  return { token: String(tok.access_token), expires_in: int(tok.expires_in) };
+}
+
 async function handleGoogle(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
   const route = url.pathname.slice("/api/google/".length);
-  const now = Math.floor(Date.now() / 1000);
 
   if (route === "status" && req.method === "GET") {
     const row = await first(env, "SELECT email, name, picture FROM google_accounts WHERE user_id=?", auth.sub);
@@ -597,24 +631,9 @@ async function handleGoogle(req: Request, env: Env, auth: JwtPayload, url: URL):
   }
 
   if (route === "token" && req.method === "GET") {
-    const row = await first(env, "SELECT refresh_token, access_token, access_exp FROM google_accounts WHERE user_id=?", auth.sub);
-    if (!row) return json({ error: "Google not connected", reconnect: true }, 409);
-    if (row.access_token && int(row.access_exp) > now + 120) {
-      return json({ access_token: row.access_token, expires_in: int(row.access_exp) - now });
-    }
-    const tok = await googleTokenRequest(env, { grant_type: "refresh_token", refresh_token: text(row.refresh_token) });
-    if (!tok.ok || !tok.access_token) {
-      if (tok.error === "invalid_grant") {
-        // Revoked in the Google account, or expired — only then do we drop the link.
-        await env.DB.prepare("DELETE FROM google_accounts WHERE user_id=?").bind(auth.sub).run();
-        return json({ error: "Google access was revoked — please reconnect", reconnect: true }, 409);
-      }
-      return errResp("Couldn't refresh Google access — try again", 502);
-    }
-    const exp = now + int(tok.expires_in);
-    await env.DB.prepare("UPDATE google_accounts SET access_token=?, access_exp=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?")
-      .bind(tok.access_token, exp, auth.sub).run();
-    return json({ access_token: tok.access_token, expires_in: int(tok.expires_in) });
+    const r = await googleAccessToken(env, auth.sub);
+    if ("error" in r) return json(r.reconnect ? { error: r.error, reconnect: true } : { error: r.error }, r.status);
+    return json({ access_token: r.token, expires_in: r.expires_in });
   }
 
   if (route === "disconnect" && req.method === "POST") {
@@ -637,6 +656,132 @@ async function handleGoogle(req: Request, env: Env, auth: JwtPayload, url: URL):
 // ── /api/attendance — check-in/out from app usage ─────────────────────────────
 // A session starts when an employee signs in or opens the app, stays open while the app pings
 // (every few minutes), and ends on Sign out — or, if they just close it, at the last ping.
+// ── Email (Gmail API, sent as the admin) ─────────────────────────────────────
+const APP_URL = "https://task.uzairvisuals.com";
+const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+const utf8b64 = (str: string) => { let bin = ""; for (const b of new TextEncoder().encode(str)) bin += String.fromCharCode(b); return btoa(bin); };
+const mimeWord = (str: string) => (/^[\x20-\x7e]*$/.test(str) ? str : `=?UTF-8?B?${utf8b64(str)}?=`);
+const noBreaks = (str: string) => str.replace(/[\r\n<>"]+/g, " ").trim();
+
+function fmt12(t: string) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t);
+  if (!m) return "";
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
+}
+
+async function sendGmail(env: Env, senderId: number, toEmail: string, toName: string, subject: string, html: string) {
+  const t = await googleAccessToken(env, senderId);
+  if ("error" in t) throw new Error(t.reconnect ? "Connect your Google account in Settings → Google first." : t.error);
+  const raw = [
+    `To: ${mimeWord(noBreaks(toName))} <${noBreaks(toEmail)}>`,
+    `Subject: ${mimeWord(noBreaks(subject))}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    utf8b64(html).replace(/.{1,76}/g, "$&\r\n"),
+  ].join("\r\n");
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${t.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw: utf8b64(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") }),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) {
+    const err = await res.json<any>().catch(() => ({}));
+    const msg = String(err?.error?.message || "");
+    if (res.status === 403 && /has not been used|disabled|not enabled/i.test(msg)) {
+      throw new Error("The Gmail API isn't enabled for your Google project. Enable it in Google Cloud Console → APIs & Services → Library → Gmail API.");
+    }
+    if (res.status === 403 || res.status === 401) throw new Error("Gmail permission is missing — disconnect Google in Settings and connect it again.");
+    throw new Error(msg || `Gmail error ${res.status}`);
+  }
+}
+
+async function emailAssignment(env: Env, adminId: number, adminName: string, employeeId: number, task: any) {
+  const emp = await first(env, "SELECT name, email FROM users WHERE id=?", employeeId);
+  if (!emp || !isEmail(String(emp.email))) return;
+  const time = fmt12(text(task.due_time));
+  const due = task.due_date ? `${new Date(`${task.due_date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}${time ? ` · ${time}` : ""}` : "";
+  const prio = text(task.priority);
+  const steps = (Array.isArray(task.milestones) ? task.milestones : []).map((m: any) => text(m.title)).filter(Boolean).slice(0, 15);
+  const row = (k: string, v: string) => (v ? `<tr><td style="padding:3px 14px 3px 0;color:#6b7280">${k}</td><td style="padding:3px 0"><b>${esc(v)}</b></td></tr>` : "");
+  const html = `<!doctype html><html><body style="margin:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#111827">
+<div style="max-width:560px;margin:0 auto;padding:24px 16px">
+ <div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #e5e7eb">
+  <div style="font-size:13px;color:#6b7280;margin-bottom:6px">${esc(adminName)} assigned you a new task</div>
+  <h1 style="font-size:20px;margin:0 0 14px">${esc(text(task.title))}</h1>
+  <table style="font-size:14px;border-collapse:collapse;margin-bottom:14px">${row("Priority", prio ? prio[0].toUpperCase() + prio.slice(1) : "")}${row("Due", due)}${row("Client / project", text(task.client_tag))}</table>
+  ${text(task.notes) ? `<div style="font-size:14px;line-height:1.55;white-space:pre-wrap;background:#f9fafb;border-radius:8px;padding:12px 14px;margin-bottom:14px">${esc(text(task.notes))}</div>` : ""}
+  ${steps.length ? `<div style="font-size:13px;color:#6b7280;margin-bottom:4px">Steps</div><ol style="font-size:14px;line-height:1.6;margin:0 0 16px;padding-left:20px">${steps.map((x: string) => `<li>${esc(x)}</li>`).join("")}</ol>` : ""}
+  <a href="${APP_URL}" style="display:inline-block;background:#0e76b3;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:8px">Open in Task OS</a>
+ </div>
+ <div style="font-size:12px;color:#9ca3af;text-align:center;margin-top:12px">Uzair Visuals · Task OS</div>
+</div></body></html>`;
+  await sendGmail(env, adminId, String(emp.email), String(emp.name), `New task: ${text(task.title)}`, html);
+}
+
+// ── /api/email/test — lets the admin confirm that Gmail sending works ────────
+async function handleEmailTest(req: Request, env: Env, auth: JwtPayload): Promise<Response> {
+  if (req.method !== "POST") return errResp("Method not allowed", 405);
+  if (auth.role !== "admin") return errResp("Forbidden", 403);
+  const me = await first(env, "SELECT name, email FROM users WHERE id=?", auth.sub);
+  if (!me) return errResp("User not found", 404);
+  try {
+    await sendGmail(env, auth.sub, String(me.email), String(me.name), "Task OS test email",
+      `<p style="font-family:Arial,sans-serif">This is a test from Task OS. Your team will get emails like this when you assign them a task.</p>`);
+  } catch (e) {
+    return errResp(e instanceof Error ? e.message : "Couldn't send the email", 502);
+  }
+  return json({ ok: true, sent_to: me.email });
+}
+
+// ── /api/push — phone/desktop alerts (web push) ──────────────────────────────
+async function handlePush(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
+  const route = url.pathname.slice("/api/push/".length);
+  if (route === "key" && req.method === "GET") {
+    return pushConfigured(env) ? json({ key: env.VAPID_PUBLIC_KEY }) : errResp("Phone alerts aren't set up on the server yet.", 503);
+  }
+
+  if (route === "subscribe" && req.method === "POST") {
+    const b = await req.json<any>().catch(() => ({}));
+    const endpoint = text(b.endpoint);
+    const p256dh = text(b.keys?.p256dh);
+    const authKey = text(b.keys?.auth);
+    let valid = endpoint.length < 1000 && p256dh.length < 200 && authKey.length < 100;
+    try {
+      valid = valid && new URL(endpoint).protocol === "https:" && b64urlDecode(p256dh).length === 65 && b64urlDecode(authKey).length === 16;
+    } catch { valid = false; }
+    if (!valid) return errResp("Invalid subscription");
+    // One row per browser; if someone else signs in on the same device it moves to them.
+    await env.DB.prepare(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?,?,?,?)
+       ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth`,
+    ).bind(auth.sub, endpoint, p256dh, authKey).run();
+    // Keep the 10 newest devices per person.
+    await env.DB.prepare(
+      "DELETE FROM push_subscriptions WHERE user_id=? AND id NOT IN (SELECT id FROM push_subscriptions WHERE user_id=? ORDER BY id DESC LIMIT 10)",
+    ).bind(auth.sub, auth.sub).run();
+    return json({ ok: true }, 201);
+  }
+
+  if (route === "unsubscribe" && req.method === "POST") {
+    const b = await req.json<any>().catch(() => ({}));
+    const endpoint = text(b.endpoint);
+    if (endpoint) await env.DB.prepare("DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?").bind(auth.sub, endpoint).run();
+    return json({ ok: true });
+  }
+
+  if (route === "test" && req.method === "POST") {
+    const r = await pushToUser(env, auth.sub, "Task OS", "Phone alerts are working. You'll be notified here.", "/", "test");
+    if (!r.devices) return errResp("No device is registered for alerts yet — turn them on first.", 409);
+    return r.sent ? json({ ok: true, sent: r.sent }) : errResp("The alert couldn't be delivered — try turning alerts off and on again.", 502);
+  }
+
+  return errResp("Not found", 404);
+}
+
 const IDLE_MS = 20 * 60 * 1000; // no ping for this long = the session ended at the last ping
 
 async function attendancePing(env: Env, userId: number) {
@@ -743,6 +888,8 @@ export default {
           else if (url.pathname.startsWith("/api/google/")) res = await handleGoogle(req, env, auth, url);
           else if (url.pathname === "/api/routines" || url.pathname.startsWith("/api/routines/")) res = await handleRoutines(req, env, auth, url);
           else if (url.pathname === "/api/comments") res = await handleComments(req, env, auth, url);
+          else if (url.pathname.startsWith("/api/push/")) res = await handlePush(req, env, auth, url);
+          else if (url.pathname === "/api/email/test") res = await handleEmailTest(req, env, auth);
           else if (url.pathname === "/api/files" || url.pathname.startsWith("/api/files/")) res = await handleFiles(req, env, auth, url);
           else if (url.pathname === "/api/attendance" || url.pathname.startsWith("/api/attendance/")) res = await handleAttendance(req, env, auth, url);
           else res = errResp("Not found", 404);

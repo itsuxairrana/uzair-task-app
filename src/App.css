@@ -960,3 +960,11 @@ button.chip:hover { border-color: var(--border-strong); }
 .file-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .file-thumb-ph { display: grid; place-items: center; width: 100%; height: 100%; color: var(--text-3); }
 @media (max-width: 640px) { .file-chip-name { max-width: 150px; } .file-thumb { width: 112px; height: 84px; } }
+
+/* ── Phone alerts prompt (inside the bell menu) ── */
+.push-prompt { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.push-prompt-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft); font-size: 13px; font-weight: 600; }
+.push-prompt-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+.push-prompt-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.push-on { display: inline-flex; align-items: center; gap: 5px; color: var(--green-ink, var(--green)); font-weight: 500; }
+.push-msg { margin: 0; }

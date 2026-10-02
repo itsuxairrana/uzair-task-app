@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { timeAgo } from '../utils/date';
 import Icon from './Icon';
+import PushPrompt from './PushPrompt';
 
 const TYPE = {
   task_completed: { icon: 'checkCircle', tone: 'green',  hint: 'View in Team' },
@@ -65,6 +66,7 @@ export default function NotificationsMenu({ notifications, onOpen, onMarkRead, o
               );
             })}
           </div>
+          <PushPrompt />
           {footer && <div className="popover-foot" onClick={() => setOpen(false)}>{footer}</div>}
         </div>
       )}

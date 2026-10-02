@@ -5,6 +5,7 @@ import { useUiStore } from './store/uiStore';
 import { useTeamStore } from './store/teamStore';
 import { signIn, signOut, isSignedIn, getGoogleUser, isGoogleConfigured, refreshGoogleStatus, clearGoogleCache } from './services/googleAuth';
 import { verifyToken, clearAuth, getUser } from './services/authApi';
+import { forgetDevice, resyncPush } from './services/pushApi';
 import { localISO } from './utils/date';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import Dashboard from './components/Dashboard';
@@ -48,10 +49,13 @@ export default function App() {
     verifyToken().then(user => { setAuthUser(user); setAuthReady(true); });
   }, []);
 
+  // Alerts stay tied to the person signed in on this device.
+  useEffect(() => { if (authReady && authUser) resyncPush(); }, [authReady, authUser]);
+
   if (!authReady) return <div className="boot"><span className="brand-mark">UV</span></div>;
   if (!authUser) return <LoginScreen onLogin={setAuthUser} />;
 
-  const handleLogout = () => { clearAuth(); clearGoogleCache(); setAuthUser(null); };
+  const handleLogout = () => { forgetDevice(); clearAuth(); clearGoogleCache(); setAuthUser(null); };
 
   // Employees get their own simple dashboard
   if (authUser.role === 'employee') {

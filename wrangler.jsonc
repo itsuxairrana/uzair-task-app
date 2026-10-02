@@ -6,7 +6,12 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   // Google OAuth (public). GOOGLE_CLIENT_SECRET is a `wrangler secret`, never in this file.
-  "vars": { "GOOGLE_CLIENT_ID": "1097007405347-c63ogrtumg2uub5cdndsjajpd1oneppq.apps.googleusercontent.com" },
+  "vars": {
+    "GOOGLE_CLIENT_ID": "1097007405347-c63ogrtumg2uub5cdndsjajpd1oneppq.apps.googleusercontent.com",
+    // Phone alerts (web push). The matching private key is the VAPID_PRIVATE_KEY wrangler secret.
+    "VAPID_PUBLIC_KEY": "BL-IUjHqKvrII_cVV6vqsMjIcFGAfugZwTaYPSPVvZuVLLevmHKhsvDI3L_vRWfdh8Rpl1fx160--FrWzZsz4SA",
+    "VAPID_SUBJECT": "mailto:uzairvisuals@gmail.com"
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

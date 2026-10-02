@@ -27,6 +27,10 @@ export const fetchComments = taskId => call('GET', `/comments?task_id=${encodeUR
 export const postComment   = (taskId, body, fileIds = []) => call('POST', '/comments', { task_id: taskId, body, file_ids: fileIds });
 export const deleteComment = id => call('DELETE', `/comments?id=${id}`);
 
+// ── Email ──
+// Sends a test message to the admin's own address (checks that Gmail sending works).
+export const sendTestEmail = () => call('POST', '/email/test');
+
 // ── Attendance ──
 export const attendancePing    = () => call('POST', '/attendance/ping');
 export const attendanceSignout = () => call('POST', '/attendance/signout');
