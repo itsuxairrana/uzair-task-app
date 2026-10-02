@@ -722,21 +722,6 @@ async function emailAssignment(env: Env, adminId: number, adminName: string, emp
   await sendGmail(env, adminId, String(emp.email), String(emp.name), `New task: ${text(task.title)}`, html);
 }
 
-// ── /api/email/test — lets the admin confirm that Gmail sending works ────────
-async function handleEmailTest(req: Request, env: Env, auth: JwtPayload): Promise<Response> {
-  if (req.method !== "POST") return errResp("Method not allowed", 405);
-  if (auth.role !== "admin") return errResp("Forbidden", 403);
-  const me = await first(env, "SELECT name, email FROM users WHERE id=?", auth.sub);
-  if (!me) return errResp("User not found", 404);
-  try {
-    await sendGmail(env, auth.sub, String(me.email), String(me.name), "Task OS test email",
-      `<p style="font-family:Arial,sans-serif">This is a test from Task OS. Your team will get emails like this when you assign them a task.</p>`);
-  } catch (e) {
-    return errResp(e instanceof Error ? e.message : "Couldn't send the email", 502);
-  }
-  return json({ ok: true, sent_to: me.email });
-}
-
 // ── /api/push — phone/desktop alerts (web push) ──────────────────────────────
 async function handlePush(req: Request, env: Env, auth: JwtPayload, url: URL): Promise<Response> {
   const route = url.pathname.slice("/api/push/".length);
@@ -771,12 +756,6 @@ async function handlePush(req: Request, env: Env, auth: JwtPayload, url: URL): P
     const endpoint = text(b.endpoint);
     if (endpoint) await env.DB.prepare("DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?").bind(auth.sub, endpoint).run();
     return json({ ok: true });
-  }
-
-  if (route === "test" && req.method === "POST") {
-    const r = await pushToUser(env, auth.sub, "Task OS", "Phone alerts are working. You'll be notified here.", "/", "test");
-    if (!r.devices) return errResp("No device is registered for alerts yet — turn them on first.", 409);
-    return r.sent ? json({ ok: true, sent: r.sent }) : errResp("The alert couldn't be delivered — try turning alerts off and on again.", 502);
   }
 
   return errResp("Not found", 404);
@@ -889,7 +868,6 @@ export default {
           else if (url.pathname === "/api/routines" || url.pathname.startsWith("/api/routines/")) res = await handleRoutines(req, env, auth, url);
           else if (url.pathname === "/api/comments") res = await handleComments(req, env, auth, url);
           else if (url.pathname.startsWith("/api/push/")) res = await handlePush(req, env, auth, url);
-          else if (url.pathname === "/api/email/test") res = await handleEmailTest(req, env, auth);
           else if (url.pathname === "/api/files" || url.pathname.startsWith("/api/files/")) res = await handleFiles(req, env, auth, url);
           else if (url.pathname === "/api/attendance" || url.pathname.startsWith("/api/attendance/")) res = await handleAttendance(req, env, auth, url);
           else res = errResp("Not found", 404);

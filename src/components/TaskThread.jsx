@@ -18,6 +18,7 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
   const [dragging, setDragging] = useState(false);
   const att = useAttachments(task.id);
   const listRef = useRef(null);
+  const drawerRef = useRef(null);
   const inputRef = useRef(null);
   const taskId = task.id;
 
@@ -40,6 +41,28 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
     document.addEventListener('keydown', onKey);
     return () => { clearInterval(t); document.removeEventListener('keydown', onKey); };
   }, [taskId, load, onClose, onSeen]);
+
+  // Phones: keep the whole drawer (and its message box) above the on-screen keyboard, and stop the page behind scrolling.
+  useEffect(() => {
+    const el = drawerRef.current;
+    const vv = window.visualViewport;
+    const fit = () => {
+      if (!el || !vv) return;
+      el.style.height = `${vv.height}px`;
+      el.style.top = `${vv.offsetTop}px`;
+      el.style.bottom = 'auto';
+    };
+    fit();
+    vv?.addEventListener('resize', fit);
+    vv?.addEventListener('scroll', fit);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      vv?.removeEventListener('resize', fit);
+      vv?.removeEventListener('scroll', fit);
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
@@ -75,6 +98,7 @@ export default function TaskThread({ task, me, onClose, onSeen, onPosted }) {
     <>
       <div className="scrim scrim-drawer" onClick={onClose} />
       <aside
+        ref={drawerRef}
         className={'drawer' + (dragging ? ' is-dropping' : '')} role="dialog" aria-label={`Conversation: ${task.title}`}
         onDragOver={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}

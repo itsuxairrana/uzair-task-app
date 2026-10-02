@@ -968,3 +968,36 @@ button.chip:hover { border-color: var(--border-strong); }
 .push-prompt-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
 .push-on { display: inline-flex; align-items: center; gap: 5px; color: var(--green-ink, var(--green)); font-weight: 500; }
 .push-msg { margin: 0; }
+
+/* ═══ Phone polish ════════════════════════════════════════════════════════ */
+/* Conversation: follow the real screen height (the keyboard resizes it) and leave room for the home bar. */
+.drawer { height: 100dvh; }
+.thread { overscroll-behavior: contain; }
+.thread-composer { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.attendance-week td:first-child, .attendance-week th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+@media (hover: none) {
+  /* No hover on touch screens: keep the delete button visible and big enough to tap. */
+  .msg-delete { opacity: .8; width: 32px; height: 32px; left: -38px; }
+}
+@media (max-width: 860px) {
+  /* The bell list opens as a full-width panel under the header, so it can never run off the screen. */
+  .notif { position: static; }
+  .notif-menu { left: 10px; right: 10px; top: calc(100% + 6px); width: auto; max-width: none; }
+  .notif-list { max-height: min(62dvh, 440px); }
+}
+@media (max-width: 600px) {
+  /* 16px stops iPhones from zooming into a field when you tap it. */
+  .input, .select, .textarea, .input-sm, .select-sm, .thread-input { font-size: 16px; }
+  .input-sm, .select-sm { height: 36px; }
+  .modal, .agency-modal { max-height: 92dvh; }
+  .modal-footer { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .segmented-lg { display: flex; width: 100%; }
+  .segmented-lg .segmented-opt { flex: 1; justify-content: center; padding: 0 4px; font-size: 12.5px; gap: 4px; white-space: nowrap; }
+  .segmented-lg .segmented-opt .icon { display: none; }
+  .attendance-week .agency-table th, .attendance-week .agency-table td { padding: 8px 8px; }
+  .msg { max-width: 92%; }
+  .tabs { padding: 0 10px; gap: 0; }
+  .tabs .tab { flex: 1; justify-content: center; padding: 0 6px; }
+  .tabs .tab .icon { display: none; }
+  .btn-icon, .icon-btn { min-width: 36px; min-height: 36px; }
+}

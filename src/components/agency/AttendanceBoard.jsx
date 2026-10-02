@@ -43,6 +43,9 @@ export default function AttendanceBoard() {
     return () => clearInterval(t);
   }, [load, day, today]);
 
+  // On a narrow screen the week scrolls sideways; start at the newest day (today, on the right).
+  const weekRef = useCallback(el => { if (el) el.scrollLeft = el.scrollWidth; }, []);
+
   const week = Array.from({ length: 7 }, (_, k) => addDaysISO(day, k - 6));
   const forUserDay = (uid, d) => (sessions || []).filter(s => s.user_id === uid && s.day === d)
     .sort((a, b) => parseTs(a.check_in) - parseTs(b.check_in));
@@ -111,7 +114,7 @@ export default function AttendanceBoard() {
           </div>
 
           <div className="card-head"><div><div className="card-title">Last 7 days</div><div className="card-sub">Time in the app per day — click a day to see details.</div></div></div>
-          <div className="attendance-week">
+          <div className="attendance-week" ref={weekRef}>
             <table className="agency-table">
               <thead>
                 <tr>

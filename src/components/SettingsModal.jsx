@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { isModelAvailable, getStoredKey, setStoredKey } from '../services/aiRouter';
 import { changePassword } from '../services/authApi';
-import { sendTestEmail } from '../services/collabApi';
 import { resetEmployeePassword } from '../services/taskSyncApi';
 import { useUiStore } from '../store/uiStore';
 import { useTeamStore } from '../store/teamStore';
@@ -118,25 +117,6 @@ function KeysTab() {
   );
 }
 
-function TestEmail() {
-  const [state, setState] = useState({ busy: false, msg: '', ok: true });
-  async function send() {
-    setState({ busy: true, msg: '', ok: true });
-    try {
-      const r = await sendTestEmail();
-      setState({ busy: false, msg: `Sent to ${r.sent_to} — check your inbox.`, ok: true });
-    } catch (e) {
-      setState({ busy: false, msg: e.message, ok: false });
-    }
-  }
-  return (
-    <div>
-      <button className="btn btn-secondary btn-sm" onClick={send} disabled={state.busy}><Icon name="mail" size={14} /> {state.busy ? 'Sending…' : 'Send a test email to myself'}</button>
-      {state.msg && <div className={'form-msg ' + (state.ok ? 'form-msg-ok' : 'form-msg-err')}>{state.msg}</div>}
-    </div>
-  );
-}
-
 function GoogleTab({ google }) {
   const { connected, configured, user, loading, onConnect, onDisconnect } = google;
   return (
@@ -163,7 +143,6 @@ function GoogleTab({ google }) {
             <span className="chip">Gmail (send)</span>
           </div>
           <p className="muted-small">When you assign a task to a team member, they're emailed automatically from this Gmail account.</p>
-          <TestEmail />
           <div><button className="btn btn-secondary btn-sm" onClick={onDisconnect}>Disconnect</button></div>
         </div>
       ) : (

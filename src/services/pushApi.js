@@ -73,5 +73,3 @@ export function forgetDevice() {
     .then(sub => sub && call('POST', '/push/unsubscribe', { endpoint: sub.endpoint }, token))
     .catch(() => {});
 }
-
-export const sendTestPush = () => call('POST', '/push/test');

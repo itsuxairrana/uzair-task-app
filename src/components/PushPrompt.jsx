@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { pushStatus, enablePush, disablePush, sendTestPush } from '../services/pushApi';
+import { pushStatus, enablePush, disablePush } from '../services/pushApi';
 import Icon from './Icon';
 
 // Lets a person turn phone/desktop alerts on or off for the device they're using.
@@ -30,11 +30,7 @@ export default function PushPrompt() {
       {status === 'on' && (
         <div className="push-prompt-row">
           <span className="push-on"><Icon name="check" size={13} /> Alerts on for this device</span>
-          <span>
-            <button className="link-btn" onClick={() => run(sendTestPush, 'Test sent — it should pop up now.')} disabled={busy}>Send test</button>
-            <span className="muted-small"> · </span>
-            <button className="link-btn" onClick={() => run(disablePush, 'Alerts turned off.')} disabled={busy}>Turn off</button>
-          </span>
+          <button className="link-btn" onClick={() => run(disablePush, 'Alerts turned off.')} disabled={busy}>Turn off</button>
         </div>
       )}
       {status === 'needs-install' && (
